@@ -1254,9 +1254,9 @@ static bool test_help_diagnostics_tutor(char *err, size_t err_sz) {
     return ok;
 }
 
-// Test 35: Short Flag Adverbs (-i, -r, -ir) & Recursive Operations
+// Test 35: Dual CLI Flags & Natural English Words Across Adverbs, Scanners & Prepositions
 static bool test_short_flags_and_recursion(char *err, size_t err_sz) {
-    // 35.1 Casefold short flag -i in replace and sort
+    // 35.1 Casefold short flag -i in replace and sort (-iu, -nr)
     char cmd1[512];
     snprintf(cmd1, sizeof(cmd1), "%s -c \"\\\"HELLO WORLD\\\", replace -i \\\"world\\\" \\\"Otto\\\", print.\"", g_bin);
     char *out1 = run_cmd(cmd1, NULL);
@@ -1267,40 +1267,72 @@ static bool test_short_flags_and_recursion(char *err, size_t err_sz) {
     }
     free(out1);
 
-    // 35.2 Casefold in sort -i
+    // 35.2 Combined flags & English aliases in sort, filter, take, drop, count, hash, encode
+    write_file("test_flags_all.otto",
+        "[\"banana\", \"Apple\", \"banana\", \"CHERRY\"], sort -iu, join \",\", print.\n"
+        "[\"100\", \"20\", \"3\"], sort -nr, join \",\", print.\n"
+        "[\"100\", \"20\", \"3\"], sort numeric reverse, join \",\", print.\n"
+        "[{name: \"a\", age: 20}, {name: \"b\", age: 40}], sort -k age -r, print first's name.\n"
+        "[\"a\", \"b\", \"c\", \"d\"], take -n 2, join \"-\", print.\n"
+        "[\"a\", \"b\", \"c\", \"d\"], drop 2, join \"-\", print.\n"
+        "\"ERROR one\\ndebug two\\nerror three\", filter -i \"error\", count -l, print.\n"
+        "\"ERROR one\\ndebug two\\nerror three\", filter -iv \"debug\", count, print.\n"
+        "\"one two three four\", count -w, print.\n"
+        "\"abcde\", count -c, print.\n"
+        "\"hello\", hash --crc32, print.\n"
+        "\"otto\", encode --hex, print.\n");
+
     char cmd2[512];
-    snprintf(cmd2, sizeof(cmd2), "%s -c \"[\\\"banana\\\", \\\"Apple\\\", \\\"CHERRY\\\"], sort -i, print first.\"", g_bin);
+    snprintf(cmd2, sizeof(cmd2), "%s test_flags_all.otto", g_bin);
     char *out2 = run_cmd(cmd2, NULL);
-    if (!out2 || strstr(out2, "Apple") == NULL) {
-        snprintf(err, err_sz, "sort -i failed: got '%s'", out2 ? out2 : "(null)");
+    remove_file("test_flags_all.otto");
+    if (!out2 ||
+        strstr(out2, "Apple,banana,CHERRY") == NULL ||
+        strstr(out2, "100,20,3") == NULL ||
+        strstr(out2, "b") == NULL ||
+        strstr(out2, "a-b") == NULL ||
+        strstr(out2, "c-d") == NULL ||
+        strstr(out2, "3610a686") == NULL ||
+        strstr(out2, "6f74746f") == NULL) {
+        snprintf(err, err_sz, "combined flags/aliases failed: got '%s'", out2 ? out2 : "(null)");
         if (out2) free(out2);
         return false;
     }
     free(out2);
 
-    // 35.3 Recursive directory copy and remove with -r
+    // 35.3 Recursive directory copy and remove with -r, replace -I, write -a
     mkdir_p("test_rec_short_src");
     mkdir_p("test_rec_short_src/sub");
-    write_file("test_rec_short_src/sub/file.txt", "recursive data\n");
+    write_file("test_rec_short_src/sub/file.txt", "recursive old_val\n");
 
+    write_file("test_rec_ops.otto",
+        "copy -r \"test_rec_short_src\" -o \"test_rec_short_dst\".\n"
+        "replace -I \"old_val\" \"new_val\" \"test_rec_short_dst/sub/file.txt\".\n"
+        "\"extra_line\\n\", write -a \"test_rec_short_dst/sub/file.txt\".\n"
+        "read \"test_rec_short_dst/sub/file.txt\", print.\n"
+        "remove -r \"test_rec_short_dst\".\n"
+        "remove -r \"test_rec_short_src\".\n");
     char cmd3[512];
-    snprintf(cmd3, sizeof(cmd3), "%s -c \"copy -r \\\"test_rec_short_src\\\" \\\"test_rec_short_dst\\\". stat \\\"test_rec_short_dst/sub/file.txt\\\", print each's name. remove -r \\\"test_rec_short_dst\\\". remove -r \\\"test_rec_short_src\\\".\"", g_bin);
+    snprintf(cmd3, sizeof(cmd3), "%s test_rec_ops.otto", g_bin);
     char *out3 = run_cmd(cmd3, NULL);
-    bool ok3 = (out3 && strstr(out3, "file.txt") != NULL && !file_exists("test_rec_short_dst/sub/file.txt"));
+    remove_file("test_rec_ops.otto");
+    bool ok3 = (out3 && strstr(out3, "recursive new_val") != NULL &&
+                strstr(out3, "extra_line") != NULL &&
+                !file_exists("test_rec_short_dst/sub/file.txt"));
     if (!ok3) {
-        snprintf(err, err_sz, "copy/remove -r failed: got '%s'", out3 ? out3 : "(null)");
+        snprintf(err, err_sz, "copy -r / replace -I / write -a failed: got '%s'", out3 ? out3 : "(null)");
         if (out3) free(out3);
         return false;
     }
     free(out3);
 
-    // 35.4 Multi-file search with -i flag
+    // 35.4 Multi-file search with -ic flag
     char cmd4[512];
-    snprintf(cmd4, sizeof(cmd4), "%s -c \"search -i \\\"otto\\\" \\\"src\\\", print count.\"", g_bin);
+    snprintf(cmd4, sizeof(cmd4), "%s -c \"search -ic \\\"otto\\\" \\\"src\\\", print.\"", g_bin);
     char *out4 = run_cmd(cmd4, NULL);
     bool ok4 = (out4 && atoi(out4) > 0);
     if (!ok4) {
-        snprintf(err, err_sz, "search -i failed: got '%s'", out4 ? out4 : "(null)");
+        snprintf(err, err_sz, "search -ic failed: got '%s'", out4 ? out4 : "(null)");
         if (out4) free(out4);
         return false;
     }

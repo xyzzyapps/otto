@@ -61,6 +61,9 @@ static ASTNode *parse_postfix(Parser *p);
 static uint16_t parse_adverbs(Parser *p) {
     uint16_t advs = 0;
     while (token_is_adverb(p->current.type)) {
+        if (p->current.lit.i64 > 0) {
+            advs |= (uint16_t)p->current.lit.i64;
+        }
         switch (p->current.type) {
             case TOK_ADV_RECURSIVELY: advs |= ADV_RECURSIVELY; break;
             case TOK_ADV_NUMERICALLY: advs |= ADV_NUMERICALLY; break;
@@ -73,6 +76,8 @@ static uint16_t parse_adverbs(Parser *p) {
             case TOK_ADV_SIMULATE: advs |= ADV_SIMULATE; break;
             case TOK_ADV_PARALLEL: advs |= ADV_PARALLEL; break;
             case TOK_ADV_BACKGROUND: advs |= ADV_BACKGROUND; break;
+            case TOK_ADV_INVERT: advs |= ADV_INVERT; break;
+            case TOK_ADV_FLAGS: advs |= (uint16_t)p->current.lit.i64; break;
             case TOK_ADV_IGNORING:
                 advs |= ADV_IGNORING_GIT;
                 advance(p);
@@ -159,8 +164,8 @@ static ASTNode *parse_primary(Parser *p) {
         node->as.unary.operand = operand;
         return node;
     }
-    if ((check(p, TOK_ADV_CASEFOLD) || check(p, TOK_ADV_RECURSIVELY) || check(p, TOK_ADV_CASEFOLD_REC)) &&
-        p->current.lexeme.len >= 2 && p->current.lexeme.ptr[0] == '-') {
+    if ((token_is_adverb(p->current.type) || token_is_scanner(p->current.type) || token_is_prep(p->current.type)) &&
+        p->current.lexeme.len >= 2 && p->current.lexeme.ptr[0] == '-' && p->current.lexeme.ptr[1] != '-') {
         Token ftok = advance(p);
         ASTNode *vnode = ast_create(p->arena, AST_EXPR_VAR, line, col + 1);
         vnode->as.var.name = (Slice){ftok.lexeme.ptr + 1, ftok.lexeme.len - 1};
@@ -418,7 +423,8 @@ static ASTNode *parse_command(Parser *p) {
     // If starting with an expression or a user-defined function call
     if (check(p, TOK_NUMBER) || check(p, TOK_UNIT_LIT) || check(p, TOK_STRING) || check(p, TOK_BOOL) ||
         check(p, TOK_NIL) || check(p, TOK_LBRACE) || check(p, TOK_LBRACKET) || check(p, TOK_MINUS) ||
-        (token_is_adverb(p->current.type) && p->current.lexeme.len >= 2 && p->current.lexeme.ptr[0] == '-') ||
+        ((token_is_adverb(p->current.type) || token_is_scanner(p->current.type) || token_is_prep(p->current.type)) &&
+         p->current.lexeme.len >= 2 && p->current.lexeme.ptr[0] == '-' && p->current.lexeme.ptr[1] != '-') ||
         check(p, TOK_LPAREN) || (p->current.type >= TOK_REG_IT && p->current.type <= TOK_REG_PREVIOUS) ||
         (check(p, TOK_IDENT) && is_defined_func(p, p->current.lexeme))) {
         ASTNode *lit_expr = parse_expr(p);
@@ -488,7 +494,8 @@ static ASTNode *parse_command(Parser *p) {
 
     if (token_is_adverb(p->current.type) &&
         !((verb == TOK_VERB_PRINT || verb == TOK_VERB_ADD) &&
-          p->current.lexeme.len >= 2 && p->current.lexeme.ptr[0] == '-')) {
+          p->current.lexeme.len >= 2 && p->current.lexeme.ptr[0] == '-' &&
+          !(verb == TOK_VERB_PRINT && (p->current.lit.i64 & ADV_COUNT)))) {
         node->as.cmd.adverbs |= parse_adverbs(p);
     }
 
@@ -517,7 +524,7 @@ static ASTNode *parse_command(Parser *p) {
         node->as.cmd.nth_val = (otok.type == TOK_ORD_NTH) ? otok.lit.nth_val : 0;
     }
 
-    // Quantifier before scanner (e.g. "8 bytes")
+    // Quantifier before scanner (e.g. "8 bytes", or "take 5", "take -n 5", "drop 2")
     if (check(p, TOK_NUMBER)) {
         Token ntok = p->current;
         size_t save_cur = p->lexer.cursor;
@@ -526,6 +533,9 @@ static ASTNode *parse_command(Parser *p) {
         if (token_is_scanner(p->current.type)) {
             Token stok = advance(p);
             node->as.cmd.scanner = stok.type;
+            node->as.cmd.nth_val = (int)ntok.lit.i64;
+        } else if (verb == TOK_VERB_TAKE || verb == TOK_VERB_DROP) {
+            node->as.cmd.scanner = TOK_SCAN_LINES;
             node->as.cmd.nth_val = (int)ntok.lit.i64;
         } else {
             p->lexer.cursor = save_cur;
@@ -538,6 +548,10 @@ static ASTNode *parse_command(Parser *p) {
     if (token_is_scanner(p->current.type)) {
         Token stok = advance(p);
         node->as.cmd.scanner = stok.type;
+        if ((verb == TOK_VERB_TAKE || verb == TOK_VERB_DROP || verb == TOK_VERB_PRINT) && check(p, TOK_NUMBER)) {
+            Token ntok = advance(p);
+            node->as.cmd.nth_val = (int)ntok.lit.i64;
+        }
     }
 
     if (token_is_adverb(p->current.type)) {
@@ -546,7 +560,7 @@ static ASTNode *parse_command(Parser *p) {
 
     if (check(p, TOK_VERB_COUNT)) {
         advance(p);
-        node->as.cmd.adverbs |= (1 << 13);
+        node->as.cmd.adverbs |= ADV_COUNT;
         if (token_is_scanner(p->current.type)) {
             Token stok = advance(p);
             node->as.cmd.scanner = stok.type;
@@ -564,15 +578,14 @@ static ASTNode *parse_command(Parser *p) {
         node->as.cmd.direct_arg = parse_expr(p);
     }
 
-    // Secondary scanner check: e.g. `take first 8 bytes` or `read "a.json" json`
-    if (node->as.cmd.scanner == 0 && token_is_scanner(p->current.type)) {
-        Token stok = advance(p);
-        node->as.cmd.scanner = stok.type;
-    }
-
-    // Adverbs after direct arg / scanner (e.g. `stat "src" -r`, `search "err" -i in "logs"`, `replace "a" -i "b"`)
-    if (token_is_adverb(p->current.type)) {
-        node->as.cmd.adverbs |= parse_adverbs(p);
+    // Secondary scanner / adverb check: e.g. `take first 8 bytes`, `read "a.json" -i --json`, `stat "src" -r`
+    while (token_is_adverb(p->current.type) || (node->as.cmd.scanner == 0 && token_is_scanner(p->current.type))) {
+        if (token_is_adverb(p->current.type)) {
+            node->as.cmd.adverbs |= parse_adverbs(p);
+        } else {
+            Token stok = advance(p);
+            node->as.cmd.scanner = stok.type;
+        }
     }
 
     // Preposition slots: PrepToken Expr (or multiple variables for `unpack ... into a b c`)
@@ -631,6 +644,17 @@ static ASTNode *parse_command(Parser *p) {
             if (token_is_adverb(p->current.type)) {
                 node->as.cmd.adverbs |= parse_adverbs(p);
             }
+        } else if ((verb == TOK_VERB_FILTER || verb == TOK_VERB_TAKE || verb == TOK_VERB_DROP) &&
+                   node->as.cmd.scanner == 0 && node->as.cmd.ordinal == 0 && node->as.cmd.nth_val == 0 &&
+                   node->as.cmd.direct_arg->type == AST_EXPR_LITERAL &&
+                   node->as.cmd.direct_arg->as.lit.val.type == VAL_SLICE) {
+            node->as.cmd.preps[0].prep = TOK_PREP_MATCHING;
+            node->as.cmd.preps[0].expr = node->as.cmd.direct_arg;
+            node->as.cmd.prep_count = 1;
+            node->as.cmd.direct_arg = NULL;
+            if (token_is_adverb(p->current.type)) {
+                node->as.cmd.adverbs |= parse_adverbs(p);
+            }
         } else if (verb == TOK_VERB_SPLIT) {
             node->as.cmd.preps[0].prep = TOK_PREP_BY;
             node->as.cmd.preps[0].expr = node->as.cmd.direct_arg;
@@ -654,7 +678,7 @@ static ASTNode *parse_command(Parser *p) {
         OttoTokenType implicit_prep = 0;
         if (verb == TOK_VERB_REPLACE) implicit_prep = TOK_PREP_WITH;
         else if (verb == TOK_VERB_COMPILE) implicit_prep = TOK_PREP_INTO;
-        else if (verb == TOK_VERB_WRITE) implicit_prep = TOK_PREP_ONTO;
+        else if (verb == TOK_VERB_WRITE) implicit_prep = (node->as.cmd.adverbs & ADV_APPEND) ? TOK_PREP_ONTO : TOK_PREP_INTO;
         else if (verb == TOK_VERB_EXCLUDE) implicit_prep = TOK_PREP_FROM;
         else if (verb == TOK_VERB_ADD) implicit_prep = TOK_PREP_INTO;
         else if (verb == TOK_VERB_COPY || verb == TOK_VERB_MOVE) implicit_prep = TOK_PREP_INTO;
@@ -670,6 +694,43 @@ static ASTNode *parse_command(Parser *p) {
             }
             node->as.cmd.preps[node->as.cmd.prep_count].prep = implicit_prep;
             node->as.cmd.preps[node->as.cmd.prep_count].expr = second_arg;
+            node->as.cmd.prep_count++;
+        }
+    }
+
+    // Single positional target on `write` when piped (e.g. `"hello", write "out.txt"` or `"hello", write -a "out.txt"`)
+    if (verb == TOK_VERB_WRITE && node->as.cmd.prep_count == 0 && node->as.cmd.direct_arg) {
+        node->as.cmd.preps[0].prep = (node->as.cmd.adverbs & ADV_APPEND) ? TOK_PREP_ONTO : TOK_PREP_INTO;
+        node->as.cmd.preps[0].expr = node->as.cmd.direct_arg;
+        node->as.cmd.prep_count = 1;
+        node->as.cmd.direct_arg = NULL;
+    }
+
+    // Optional 3rd positional target or trailing prepositions on `replace` (e.g. `replace -I "old" "new" "file.txt"`)
+    while (token_is_prep(p->current.type)) {
+        Token prep_tok = advance(p);
+        ASTNode *prep_expr = (prep_tok.type == TOK_PREP_DISCARD) ? NULL : parse_expr(p);
+        if (token_is_adverb(p->current.type)) {
+            node->as.cmd.adverbs |= parse_adverbs(p);
+        }
+        if (node->as.cmd.prep_count < 8) {
+            node->as.cmd.preps[node->as.cmd.prep_count].prep = prep_tok.type;
+            node->as.cmd.preps[node->as.cmd.prep_count].expr = prep_expr;
+            node->as.cmd.prep_count++;
+        }
+    }
+    if (verb == TOK_VERB_REPLACE && node->as.cmd.prep_count == 1 &&
+        !token_is_prep(p->current.type) && !token_is_adverb(p->current.type) &&
+        p->current.type != TOK_COMMA && p->current.type != TOK_AND &&
+        p->current.type != TOK_OR && p->current.type != TOK_DOT &&
+        p->current.type != TOK_COLON && p->current.type != TOK_IF &&
+        p->current.type != TOK_UNLESS && p->current.type != TOK_AMP &&
+        p->current.type != TOK_EOF &&
+        p->current.type != TOK_RPAREN && p->current.type != TOK_RBRACKET) {
+        ASTNode *third_arg = parse_expr(p);
+        if (node->as.cmd.prep_count < 8) {
+            node->as.cmd.preps[node->as.cmd.prep_count].prep = TOK_PREP_IN;
+            node->as.cmd.preps[node->as.cmd.prep_count].expr = third_arg;
             node->as.cmd.prep_count++;
         }
     }

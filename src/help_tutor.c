@@ -35,15 +35,15 @@ typedef struct HelpEntry {
 
 static const HelpEntry g_help_db[] = {
     { "search", "Dev Tools (replaces ripgrep)",
-      "Fast recursive gitignore-aware multi-file text search returning {file, line, col, text} maps. Supports `-i` / `casefold`.",
-      "search [-i | casefold] \"<pattern>\" [in \"<dir>\"]",
+      "Fast recursive gitignore-aware multi-file text search returning {file, line, col, text} maps. Supports `-i`/`casefold`, `-c`/`count`, `-v`/`inverting`.",
+      "search [-i | casefold] [-c | count] [-v | inverting] \"<pattern>\" [in \"<dir>\"]",
       "  search \"TODO\" in \"src\", table.\n"
-      "  search -i \"error\" \"logs\", print count.\n"
+      "  search -ic \"error\" \"logs\", print.\n"
       "  search \"vm_run\" \"src\", print first's file." },
     { "stat", "Dev Tools (replaces eza / fd)",
       "Inspect rich file metadata ({path, name, ext, size, age, modified, dir}). Supports `-r` / `recursively` and unit literals (10kb, 7d).",
       "stat [-r | recursively] [\"<path-or-glob>\"]",
-      "  stat \"src\", sort size descending, take 5 lines, table.\n"
+      "  stat \"src\", sort size descending, take 5, table.\n"
       "  stat -r \"src\", take where each's size > 10kb, table.\n"
       "  every file \"src/*\" where each's ext == \"h\": print each's name." },
     { "view", "Dev Tools (replaces bat / less)",
@@ -52,49 +52,49 @@ static const HelpEntry g_help_db[] = {
       "  view \"src/main.c\".\n"
       "  read \"README.md\", take 25 lines, view." },
     { "git", "Native Git Scanners (replaces delta / lazygit)",
-      "Structured git scanners for status, commits, branches, and colorized diffs.",
+      "Structured git scanners for status (`--status`), commits (`--commits`), branches (`--branches`), and colorized diffs (`--diff`).",
       "read [git] status | commits | branches | diff",
       "  read status, table.\n"
-      "  read commits, take 5 lines, table.\n"
+      "  read commits, take 5, table.\n"
       "  every branch where current == false: print name.\n"
       "  read diff, print." },
     { "status", "Native Git Scanners",
       "Scan working-tree git status into {state, file} maps.",
-      "read status, table.",
+      "read status | --status, table.",
       "  read status, table.\n"
       "  every status where state == \"M\": print file." },
     { "commits", "Native Git Scanners",
       "Scan recent git commit history into {hash, author, date, message} maps.",
-      "read commits, table.",
-      "  read commits, take 10 lines, table.\n"
+      "read commits | --commits, table.",
+      "  read commits, take 10, table.\n"
       "  read commits, print first's hash." },
     { "branches", "Native Git Scanners",
       "Scan local git branches into {name, current} maps.",
-      "read branches, table.",
+      "read branches | --branches, table.",
       "  read branches, table.\n"
       "  every branch where current == true: print name." },
     { "diff", "Native Git Scanners",
       "Render delta-style ANSI syntax-colored git diff.",
-      "read diff [\"<path>\"], print.",
+      "read diff | --diff [\"<path>\"], print.",
       "  read diff, print.\n"
       "  read \"src/vm.c\" diff, print." },
     { "hash", "Crypto & Encoding (replaces openssl / sha256sum)",
       "Compute cryptographic SHA-256 (default) or IEEE CRC32 hex digests in pure C11.",
-      "<expr>, hash [sha256 | crc32]",
+      "<expr>, hash [sha256 | --sha256 | crc32 | --crc32]",
       "  \"hello\", hash, print.\n"
-      "  \"hello\", hash crc32, print.\n"
+      "  \"hello\", hash --crc32, print.\n"
       "  read \"otto.exe\", hash sha256, print." },
     { "encode", "Crypto & Encoding (replaces base64 / xxd)",
       "Encode strings or bytes into base64 (default), hex, or url percent-encoding.",
-      "<expr>, encode [base64 | hex | url]",
+      "<expr>, encode [base64 | --base64 | hex | --hex | url | --url]",
       "  \"hello world\", encode base64, print.\n"
-      "  \"otto\", encode hex, print.\n"
+      "  \"otto\", encode --hex, print.\n"
       "  \"a b&c\", encode url, print." },
     { "decode", "Crypto & Encoding",
       "Decode base64 (default), hex, or url percent-encoded strings.",
-      "<expr>, decode [base64 | hex | url]",
+      "<expr>, decode [base64 | --base64 | hex | --hex | url | --url]",
       "  \"aGVsbG8=\", decode base64, print.\n"
-      "  \"6f74746f\", decode hex, print.\n"
+      "  \"6f74746f\", decode --hex, print.\n"
       "  \"hello%20world\", decode url, print." },
     { "uuid", "Crypto & Encoding (replaces uuidgen)",
       "Generate a random RFC 4122 version 4 UUID.",
@@ -103,22 +103,22 @@ static const HelpEntry g_help_db[] = {
       "  uuid into req_id. print req_id." },
     { "toml", "Structured Data (replaces tomlq)",
       "Parse TOML configuration files ([section] tables, arrays, numbers, booleans, strings).",
-      "read \"<file.toml>\" toml",
+      "read \"<file.toml>\" [toml | --toml]",
       "  read \"Cargo.toml\" toml, print it's package's name.\n"
-      "  read \"config.toml\" toml, print." },
+      "  read \"config.toml\" --toml, print." },
     { "jsonl", "Structured Data (replaces jq -c)",
       "Parse or stream newline-delimited JSON (NDJSON / .jsonl) records.",
-      "read \"<file.jsonl>\" jsonl   or   every jsonl \"<file.jsonl>\": ...",
+      "read \"<file.jsonl>\" [jsonl | --jsonl]   or   every jsonl \"<file.jsonl>\": ...",
       "  read \"events.jsonl\" jsonl, table.\n"
       "  every jsonl \"events.jsonl\" where level == \"error\": print msg." },
     { "disk", "System & Ops (replaces dust / duf)",
       "Show mounted drive space (no args) or recursive directory size breakdown (with path).",
       "disk   or   disk \"<dir>\"",
       "  disk, table.\n"
-      "  disk \"src\", take 10 lines, table." },
+      "  disk \"src\", take 10, table." },
     { "ports", "System & Ops (replaces lsof / netstat)",
       "Scan active local TCP/UDP ports into {proto, local, port, state, pid} maps.",
-      "read ports, table.   or   every port where port == 8080: kill.",
+      "read [ports | --ports], table.   or   every port where port == 8080: kill.",
       "  read ports, table.\n"
       "  every port where port == 8080: kill." },
     { "abbr", "Interactive Shell (Fish-style abbreviations)",
@@ -129,58 +129,59 @@ static const HelpEntry g_help_db[] = {
       "  abbr, table." },
     { "prepend", "Environment & Lists (Fish fish_add_path)",
       "Deduplicated $PATH prepending or list front-insertion.",
-      "prepend \"<dir>\" into $PATH",
+      "prepend \"<dir>\" [into | -o] $PATH",
       "  prepend \"./bin\" into $PATH.\n"
       "  [2, 3], prepend 1, print." },
     { "append", "Environment & Lists",
       "Deduplicated $PATH appending or list back-insertion.",
-      "append \"<dir>\" into $PATH",
+      "append \"<dir>\" [into | -o] $PATH",
       "  append \"~/.local/bin\" into $PATH.\n"
       "  [1, 2], append 3, print." },
     { "read", "Core Verbs",
-      "Read files, directory trees, processes, ports, git state, SQLite tables, JSON, YAML, TOML, CSV, or JSONL.",
-      "read \"<source>\" [json | yaml | toml | csv | jsonl | tree]",
-      "  read \"users.json\" json, table.\n"
+      "Read files, directory trees, processes, ports, git state, SQLite tables, JSON (`--json`), YAML (`--yaml`), TOML (`--toml`), CSV (`--csv`), or JSONL (`--jsonl`).",
+      "read [-r | recursively] \"<source>\" [json | yaml | toml | csv | jsonl | tree | files]",
+      "  read \"users.json\" --json, table.\n"
       "  read \"ops.db:metrics\", table.\n"
-      "  read processes, take 10 lines, table." },
+      "  read -r \"src\" files, print." },
     { "write", "Core Verbs",
-      "Write or append (`onto`) text, maps, or lists to files, variables (`into`), SQLite tables, or HTTP POST URLs.",
-      "write <expr> into <var-or-file>   |   write <expr> onto \"<file-or-url-or-db>\"",
+      "Write (`into` / `-o`) or append (`onto` / `-a` / `--append`) text, maps, or lists to files, variables, SQLite tables, or HTTP POST URLs.",
+      "write [-a | --append] <expr> [into | -o | onto] <var-or-file>",
       "  write \"hello\" into \"out.txt\".\n"
-      "  write {host: \"web1\", cpu: 82} onto \"ops.db:metrics\".\n"
-      "  write {ok: true} onto \"https://httpbin.org/post\", print." },
+      "  \"line 2\", write -a \"out.txt\".\n"
+      "  write {host: \"web1\", cpu: 82} onto \"ops.db:metrics\"." },
     { "take", "Core Verbs",
-      "Filter items (`where`, `matching`), slice top N lines/bytes, or extract `urls`, `emails`, `numbers`, `words`.",
-      "take [where <cond> | matching \"<pat>\" | <N> lines | first | urls | emails | numbers]",
-      "  read \"app.log\", take matching \"ERROR\", print.\n"
+      "Filter items (`where`/`--where`, `matching`/`-e`/`-m`, `-i`/`casefold`, `-v`/`inverting`, `-c`/`count`), slice top N (`take 5` / `take -n 5`), or extract `urls`, `emails`, `numbers`, `words`.",
+      "take [-i] [-v] [-c] [where <cond> | [matching | -e] \"<pat>\" | [-n | -l] <N> [lines] | first | urls | emails | numbers]",
+      "  read \"app.log\", take -i \"error\", print.\n"
       "  [10, 25, 40], take where each > 20, print.\n"
       "  \"reach dev@otto.sh\", take emails, print first." },
     { "drop", "Core Verbs",
-      "Remove items matching a condition (`where`, `matching`) or drop leading/trailing lines/elements.",
-      "drop [where <cond> | matching \"<pat>\" | <N> lines | first | last]",
-      "  read \"config.ini\", drop matching \"#\", print.\n"
+      "Remove items matching a condition (`where`, `matching`/`-e`, `-i`/`casefold`) or drop leading/trailing lines/elements (`drop 2` / `drop -n 2`).",
+      "drop [-i] [where <cond> | [matching | -e] \"<pat>\" | [-n | -l] <N> [lines] | first | last]",
+      "  read \"config.ini\", drop \"#\", print.\n"
       "  [1, 2, 3, 4], drop first, print." },
     { "sort", "Core Verbs",
-      "Sort lists, tables, or lines with optional `by <key>`, `descending`, `numerically`, `casefold`, `uniquely`.",
-      "sort [[by] <key>] [descending] [numerically] [casefold] [uniquely]",
-      "  read \"users.json\" json, sort age descending, table.\n"
-      "  [\"b\", \"A\", \"b\"], sort casefold uniquely, print." },
+      "Sort lists, tables, or lines with optional `by`/`-k` <key>, `descending`/`reverse`/`-d`/`-r`, `numerically`/`-n`, `casefold`/`-i`, `uniquely`/`-u`.",
+      "sort [[by | -k] <key>] [-d | -r | descending | reverse] [-n | numerically] [-i | casefold] [-u | uniquely]",
+      "  read \"users.json\" json, sort -k age -r, table.\n"
+      "  [\"b\", \"A\", \"b\"], sort -iu, print.\n"
+      "  [\"100\", \"20\", \"3\"], sort -nr, print." },
     { "replace", "Core Verbs",
-      "Replace substrings in pipeline values or `inplace` across files (with `simulate` dry-run & `undo` rollback).",
-      "[simulate] [inplace] replace \"<old>\" [with] \"<new>\" [casefold]",
-      "  \"hello foo\", replace \"foo\" \"bar\", print.\n"
-      "  every file \"*.conf\": simulate inplace replace \"8080\" with \"9090\".\n"
+      "Replace substrings in pipeline values or `inplace`/`-I` across files (with `simulate`/`-s`/`--dry-run`, `casefold`/`-i`, & `undo` rollback).",
+      "replace [-i | casefold] [-I | inplace] [-s | --dry-run | simulate] \"<old>\" [with] \"<new>\" [[in] \"<file>\"]",
+      "  \"hello foo\", replace -i \"FOO\" \"bar\", print.\n"
+      "  replace -I \"8080\" \"9090\" \"app.conf\".\n"
       "  undo last." },
     { "every", "Stream Hooks",
-      "Stream over lines, files, rows, processes, ports, git branches/commits, JSONL, or timer intervals (`every 2s:`).",
-      "every [recursively] <scanner> [\"<source>\"] [where <cond>]: <pipeline>.",
+      "Stream over lines (`-l`), files (`--files`), rows, processes, ports, git branches/commits, JSONL, or timer intervals (`every 2s:`).",
+      "every [-r | recursively] [--ignore-git | ignoring git] <scanner> [\"<source>\"] [where <cond>]: <pipeline>.",
       "  every line \"access.log\" matching \"500\": print first word.\n"
-      "  every recursively file \"src/*.c\": print.\n"
+      "  every -r file \"src/*.c\": print.\n"
       "  every 5s: read ports, count, print." },
     { "jobs", "Job Control",
-      "Manage background OS processes (`&`, `background`, `jobs`, `resume`, `kill`).",
-      "background run \"<cmd>\".   |   jobs, table.   |   resume 1.   |   kill 1.",
-      "  background run \"python -m http.server 8000\".\n"
+      "Manage background OS processes (`&`, `-b`, `--bg`, `background`, `jobs`, `resume`, `kill`).",
+      "run -b \"<cmd>\".   |   background run \"<cmd>\".   |   jobs, table.   |   resume 1.   |   kill 1.",
+      "  run -b \"python -m http.server 8000\".\n"
       "  jobs, table.\n"
       "  kill 1." },
     { "tasks", "Task Runner (replaces just / make)",

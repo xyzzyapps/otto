@@ -1,8 +1,14 @@
 #include "lexer.h"
+#include "ast.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
+#ifdef _WIN32
+#define strncasecmp _strnicmp
+#else
+#include <strings.h>
+#endif
 
 static bool is_ident_start(char c) {
     return isalpha((unsigned char)c) || c == '_' || c == '$' || c == '*' || c == '.' || c == '/';
@@ -196,16 +202,25 @@ static OttoTokenType classify_word(const char *word, size_t len) {
     // 5. Adverbs
     if ((len == 11 && strncasecmp(word, "recursively", 11) == 0) ||
         (len == 9 && strncasecmp(word, "recursive", 9) == 0)) return TOK_ADV_RECURSIVELY;
-    if (len == 11 && strncasecmp(word, "numerically", 11) == 0) return TOK_ADV_NUMERICALLY;
-    if (len == 10 && strncasecmp(word, "descending", 10) == 0) return TOK_ADV_DESCENDING;
-    if (len == 8 && strncasecmp(word, "uniquely", 8) == 0) return TOK_ADV_UNIQUELY;
+    if ((len == 11 && strncasecmp(word, "numerically", 11) == 0) ||
+        (len == 7 && strncasecmp(word, "numeric", 7) == 0)) return TOK_ADV_NUMERICALLY;
+    if ((len == 10 && strncasecmp(word, "descending", 10) == 0) ||
+        (len == 7 && strncasecmp(word, "reverse", 7) == 0) ||
+        (len == 8 && strncasecmp(word, "reversed", 8) == 0)) return TOK_ADV_DESCENDING;
+    if ((len == 8 && strncasecmp(word, "uniquely", 8) == 0) ||
+        (len == 6 && strncasecmp(word, "unique", 6) == 0)) return TOK_ADV_UNIQUELY;
     if (len == 7 && strncasecmp(word, "inplace", 7) == 0) return TOK_ADV_INPLACE;
     if (len == 12 && strncasecmp(word, "concurrently", 12) == 0) return TOK_ADV_CONCURRENTLY;
-    if (len == 8 && strncasecmp(word, "casefold", 8) == 0) return TOK_ADV_CASEFOLD;
-    if (len == 8 && strncasecmp(word, "simulate", 8) == 0) return TOK_ADV_SIMULATE;
+    if ((len == 8 && strncasecmp(word, "casefold", 8) == 0) ||
+        (len == 11 && strncasecmp(word, "insensitive", 11) == 0)) return TOK_ADV_CASEFOLD;
+    if ((len == 8 && strncasecmp(word, "simulate", 8) == 0) ||
+        (len == 6 && strncasecmp(word, "dryrun", 6) == 0)) return TOK_ADV_SIMULATE;
     if (len == 8 && strncasecmp(word, "parallel", 8) == 0) return TOK_ADV_PARALLEL;
     if (len == 10 && strncasecmp(word, "background", 10) == 0) return TOK_ADV_BACKGROUND;
-    if (len == 8 && strncasecmp(word, "ignoring", 8) == 0) return TOK_ADV_IGNORING;
+    if ((len == 8 && strncasecmp(word, "ignoring", 8) == 0) ||
+        (len == 9 && strncasecmp(word, "gitignore", 9) == 0)) return TOK_ADV_IGNORING;
+    if ((len == 9 && strncasecmp(word, "inverting", 9) == 0) ||
+        (len == 8 && strncasecmp(word, "inverted", 8) == 0)) return TOK_ADV_INVERT;
 
     // 6. Prepositions
     if (len == 4 && strncasecmp(word, "into", 4) == 0) return TOK_PREP_INTO;
@@ -365,29 +380,172 @@ Token lexer_next(Lexer *lex) {
     }
     if (c == '+') { next_char(lex); tok.type = TOK_PLUS; tok.lexeme = (Slice){start, 1}; return tok; }
     if (c == '-') {
-        // Could be negative number if followed by digit
         char n1 = peek_next_char(lex);
         if (isdigit((unsigned char)n1)) {
             // fallthrough to number lexer
-        } else if (n1 == 'i' || n1 == 'I' || n1 == 'r' || n1 == 'R') {
-            char n2 = (lex->cursor + 2 < lex->length) ? lex->source[lex->cursor + 2] : '\0';
-            char n3 = (lex->cursor + 3 < lex->length) ? lex->source[lex->cursor + 3] : '\0';
-            if (!is_ident_char(n2) && n2 != '.') {
-                next_char(lex); // '-'
-                next_char(lex); // 'i' or 'r'
-                tok.type = (n1 == 'i' || n1 == 'I') ? TOK_ADV_CASEFOLD : TOK_ADV_RECURSIVELY;
-                tok.lexeme = (Slice){start, 2};
-                return tok;
-            } else if ((n2 == 'i' || n2 == 'I' || n2 == 'r' || n2 == 'R') && !is_ident_char(n3) && n3 != '.') {
-                next_char(lex); // '-'
-                next_char(lex); // first flag
-                next_char(lex); // second flag
-                bool has_i = (n1 == 'i' || n1 == 'I' || n2 == 'i' || n2 == 'I');
-                bool has_r = (n1 == 'r' || n1 == 'R' || n2 == 'r' || n2 == 'R');
-                tok.type = (has_i && has_r) ? TOK_ADV_CASEFOLD_REC
-                         : (has_i ? TOK_ADV_CASEFOLD : TOK_ADV_RECURSIVELY);
-                tok.lexeme = (Slice){start, 3};
-                return tok;
+        } else if (n1 == '-' && lex->cursor + 2 < lex->length && isalpha((unsigned char)lex->source[lex->cursor + 2])) {
+            // Long CLI flags: --recursive, --ignore-case, --numeric, --reverse, --unique, --inplace, --dry-run, etc.
+            size_t flen = 0;
+            const char *fstart = lex->source + lex->cursor + 2;
+            while (lex->cursor + 2 + flen < lex->length) {
+                char fc = fstart[flen];
+                if (isalnum((unsigned char)fc) || fc == '-') flen++;
+                else break;
+            }
+            char after = (lex->cursor + 2 + flen < lex->length) ? fstart[flen] : '\0';
+            if (flen > 0 && !is_ident_char(after) && after != '.') {
+                OttoTokenType ftype = TOK_ERROR;
+                uint16_t fmask = 0;
+                bool strip_prefix = false;
+
+                if ((flen == 9 && strncasecmp(fstart, "recursive", 9) == 0)) { ftype = TOK_ADV_RECURSIVELY; fmask = ADV_RECURSIVELY; }
+                else if ((flen == 11 && strncasecmp(fstart, "ignore-case", 11) == 0) ||
+                         (flen == 8 && strncasecmp(fstart, "casefold", 8) == 0) ||
+                         (flen == 11 && strncasecmp(fstart, "insensitive", 11) == 0)) { ftype = TOK_ADV_CASEFOLD; fmask = ADV_CASEFOLD; }
+                else if ((flen == 7 && strncasecmp(fstart, "numeric", 7) == 0) ||
+                         (flen == 12 && strncasecmp(fstart, "numeric-sort", 12) == 0)) { ftype = TOK_ADV_NUMERICALLY; fmask = ADV_NUMERICALLY; }
+                else if ((flen == 7 && strncasecmp(fstart, "reverse", 7) == 0) ||
+                         (flen == 4 && strncasecmp(fstart, "desc", 4) == 0) ||
+                         (flen == 10 && strncasecmp(fstart, "descending", 10) == 0)) { ftype = TOK_ADV_DESCENDING; fmask = ADV_DESCENDING; }
+                else if (flen == 6 && strncasecmp(fstart, "unique", 6) == 0) { ftype = TOK_ADV_UNIQUELY; fmask = ADV_UNIQUELY; }
+                else if ((flen == 7 && strncasecmp(fstart, "inplace", 7) == 0) ||
+                         (flen == 8 && strncasecmp(fstart, "in-place", 8) == 0)) { ftype = TOK_ADV_INPLACE; fmask = ADV_INPLACE; }
+                else if ((flen == 8 && strncasecmp(fstart, "simulate", 8) == 0) ||
+                         (flen == 7 && strncasecmp(fstart, "dry-run", 7) == 0) ||
+                         (flen == 6 && strncasecmp(fstart, "dryrun", 6) == 0)) { ftype = TOK_ADV_SIMULATE; fmask = ADV_SIMULATE; }
+                else if ((flen == 8 && strncasecmp(fstart, "parallel", 8) == 0) ||
+                         (flen == 10 && strncasecmp(fstart, "concurrent", 10) == 0) ||
+                         (flen == 12 && strncasecmp(fstart, "concurrently", 12) == 0)) { ftype = TOK_ADV_FLAGS; fmask = ADV_PARALLEL | ADV_CONCURRENTLY; }
+                else if ((flen == 10 && strncasecmp(fstart, "background", 10) == 0) ||
+                         (flen == 2 && strncasecmp(fstart, "bg", 2) == 0)) { ftype = TOK_ADV_BACKGROUND; fmask = ADV_BACKGROUND; }
+                else if ((flen == 10 && strncasecmp(fstart, "ignore-git", 10) == 0) ||
+                         (flen == 6 && strncasecmp(fstart, "no-git", 6) == 0) ||
+                         (flen == 9 && strncasecmp(fstart, "gitignore", 9) == 0)) { ftype = TOK_ADV_FLAGS; fmask = ADV_IGNORING_GIT; }
+                else if (flen == 5 && strncasecmp(fstart, "count", 5) == 0) { ftype = TOK_ADV_FLAGS; fmask = ADV_COUNT; }
+                else if ((flen == 6 && strncasecmp(fstart, "invert", 6) == 0) ||
+                         (flen == 12 && strncasecmp(fstart, "invert-match", 12) == 0)) { ftype = TOK_ADV_INVERT; fmask = ADV_INVERT; }
+                else if (flen == 6 && strncasecmp(fstart, "append", 6) == 0) { ftype = TOK_ADV_FLAGS; fmask = ADV_APPEND; }
+                // Scanner long flags
+                else if (flen == 4 && strncasecmp(fstart, "json", 4) == 0) ftype = TOK_SCAN_JSON;
+                else if (flen == 4 && strncasecmp(fstart, "yaml", 4) == 0) ftype = TOK_SCAN_YAML;
+                else if (flen == 4 && strncasecmp(fstart, "toml", 4) == 0) ftype = TOK_SCAN_TOML;
+                else if (flen == 3 && strncasecmp(fstart, "csv", 3) == 0) ftype = TOK_SCAN_CSV;
+                else if (flen == 5 && strncasecmp(fstart, "jsonl", 5) == 0) ftype = TOK_SCAN_JSONL;
+                else if (flen == 4 && strncasecmp(fstart, "tree", 4) == 0) ftype = TOK_SCAN_TREE;
+                else if ((flen == 4 && strncasecmp(fstart, "file", 4) == 0) ||
+                         (flen == 5 && strncasecmp(fstart, "files", 5) == 0)) ftype = TOK_SCAN_FILES;
+                else if ((flen == 4 && strncasecmp(fstart, "line", 4) == 0) ||
+                         (flen == 5 && strncasecmp(fstart, "lines", 5) == 0)) ftype = TOK_SCAN_LINES;
+                else if ((flen == 4 && strncasecmp(fstart, "word", 4) == 0) ||
+                         (flen == 5 && strncasecmp(fstart, "words", 5) == 0)) ftype = TOK_SCAN_WORDS;
+                else if ((flen == 4 && strncasecmp(fstart, "byte", 4) == 0) ||
+                         (flen == 5 && strncasecmp(fstart, "bytes", 5) == 0)) ftype = TOK_SCAN_BYTES;
+                else if ((flen == 6 && strncasecmp(fstart, "number", 6) == 0) ||
+                         (flen == 7 && strncasecmp(fstart, "numbers", 7) == 0)) ftype = TOK_SCAN_NUMBERS;
+                else if (flen == 4 && strncasecmp(fstart, "urls", 4) == 0) ftype = TOK_SCAN_URLS;
+                else if (flen == 6 && strncasecmp(fstart, "emails", 6) == 0) ftype = TOK_SCAN_EMAILS;
+                else if ((flen == 4 && strncasecmp(fstart, "port", 4) == 0) ||
+                         (flen == 5 && strncasecmp(fstart, "ports", 5) == 0)) ftype = TOK_SCAN_PORTS;
+                else if ((flen == 7 && strncasecmp(fstart, "process", 7) == 0) ||
+                         (flen == 9 && strncasecmp(fstart, "processes", 9) == 0)) ftype = TOK_SCAN_PROCESSES;
+                else if (flen == 6 && strncasecmp(fstart, "status", 6) == 0) ftype = TOK_SCAN_STATUS;
+                else if ((flen == 6 && strncasecmp(fstart, "commit", 6) == 0) ||
+                         (flen == 7 && strncasecmp(fstart, "commits", 7) == 0)) ftype = TOK_SCAN_COMMITS;
+                else if ((flen == 6 && strncasecmp(fstart, "branch", 6) == 0) ||
+                         (flen == 8 && strncasecmp(fstart, "branches", 8) == 0)) ftype = TOK_SCAN_BRANCHES;
+                else if (flen == 4 && strncasecmp(fstart, "diff", 4) == 0) ftype = TOK_SCAN_DIFF;
+                // Preposition long flags
+                else if ((flen == 5 && strncasecmp(fstart, "match", 5) == 0) ||
+                         (flen == 8 && strncasecmp(fstart, "matching", 8) == 0)) ftype = TOK_PREP_MATCHING;
+                else if ((flen == 3 && strncasecmp(fstart, "key", 3) == 0) ||
+                         (flen == 2 && strncasecmp(fstart, "by", 2) == 0)) ftype = TOK_PREP_BY;
+                else if ((flen == 6 && strncasecmp(fstart, "output", 6) == 0) ||
+                         (flen == 4 && strncasecmp(fstart, "into", 4) == 0)) ftype = TOK_PREP_INTO;
+                else if (flen == 4 && strncasecmp(fstart, "onto", 4) == 0) ftype = TOK_PREP_ONTO;
+                else if (flen == 4 && strncasecmp(fstart, "from", 4) == 0) ftype = TOK_PREP_FROM;
+                else if (flen == 4 && strncasecmp(fstart, "with", 4) == 0) ftype = TOK_PREP_WITH;
+                else if (flen == 5 && strncasecmp(fstart, "where", 5) == 0) ftype = TOK_PREP_WHERE;
+                else if (flen == 2 && strncasecmp(fstart, "in", 2) == 0) ftype = TOK_PREP_IN;
+                else if (flen == 2 && strncasecmp(fstart, "at", 2) == 0) ftype = TOK_PREP_AT;
+                else if ((flen == 5 && strncasecmp(fstart, "quiet", 5) == 0) ||
+                         (flen == 6 && strncasecmp(fstart, "silent", 6) == 0) ||
+                         (flen == 7 && strncasecmp(fstart, "discard", 7) == 0)) ftype = TOK_PREP_DISCARD;
+                // Algorithm long flags (--sha256, --crc32, --base64, --hex, --url)
+                else if ((flen == 6 && strncasecmp(fstart, "sha256", 6) == 0) ||
+                         (flen == 5 && strncasecmp(fstart, "crc32", 5) == 0) ||
+                         (flen == 6 && strncasecmp(fstart, "base64", 6) == 0) ||
+                         (flen == 3 && strncasecmp(fstart, "hex", 3) == 0) ||
+                         (flen == 3 && strncasecmp(fstart, "url", 3) == 0)) {
+                    ftype = TOK_IDENT;
+                    strip_prefix = true;
+                }
+
+                if (ftype != TOK_ERROR) {
+                    for (size_t k = 0; k < 2 + flen; k++) next_char(lex);
+                    tok.type = ftype;
+                    tok.lit.i64 = fmask;
+                    tok.lexeme = strip_prefix ? (Slice){fstart, flen} : (Slice){start, 2 + flen};
+                    return tok;
+                }
+            }
+            next_char(lex);
+            tok.type = TOK_MINUS;
+            tok.lexeme = (Slice){start, 1};
+            return tok;
+        } else if (isalpha((unsigned char)n1)) {
+            // Short CLI flags (-i, -r, -n, -u, -d, -s, -p, -b, -c, -v, -a, -I, -l, -w, -e, -m, -k, -o, -f, -q, or combined -ir, -nr, -rn, -nu, -iu, -ic, etc.)
+            size_t flen = 0;
+            const char *fstart = lex->source + lex->cursor + 1;
+            while (lex->cursor + 1 + flen < lex->length && isalnum((unsigned char)fstart[flen])) {
+                flen++;
+            }
+            char after = (lex->cursor + 1 + flen < lex->length) ? fstart[flen] : '\0';
+            if (flen >= 1 && flen <= 4 && !is_ident_char(after) && after != '.') {
+                if (flen == 1) {
+                    OttoTokenType stype = TOK_ERROR;
+                    if (n1 == 'l') stype = TOK_SCAN_LINES;
+                    else if (n1 == 'w') stype = TOK_SCAN_WORDS;
+                    else if (n1 == 'e' || n1 == 'm') stype = TOK_PREP_MATCHING;
+                    else if (n1 == 'k') stype = TOK_PREP_BY;
+                    else if (n1 == 'o') stype = TOK_PREP_INTO;
+                    else if (n1 == 'f') stype = TOK_PREP_FROM;
+                    else if (n1 == 'q') stype = TOK_PREP_DISCARD;
+                    if (stype != TOK_ERROR) {
+                        next_char(lex); // '-'
+                        next_char(lex); // flag char
+                        tok.type = stype;
+                        tok.lexeme = (Slice){start, 2};
+                        return tok;
+                    }
+                }
+                uint16_t mask = 0;
+                bool all_adv = true;
+                for (size_t k = 0; k < flen; k++) {
+                    char fc = fstart[k];
+                    if (fc == 'i') mask |= ADV_CASEFOLD;
+                    else if (fc == 'I') mask |= ADV_INPLACE;
+                    else if (fc == 'r' || fc == 'R') mask |= ADV_RECURSIVELY;
+                    else if (fc == 'n') mask |= ADV_NUMERICALLY;
+                    else if (fc == 'd') mask |= ADV_DESCENDING;
+                    else if (fc == 'u') mask |= ADV_UNIQUELY;
+                    else if (fc == 's') mask |= ADV_SIMULATE;
+                    else if (fc == 'p' || fc == 'P') mask |= (ADV_PARALLEL | ADV_CONCURRENTLY);
+                    else if (fc == 'b') mask |= ADV_BACKGROUND;
+                    else if (fc == 'c') mask |= ADV_COUNT;
+                    else if (fc == 'v') mask |= ADV_INVERT;
+                    else if (fc == 'a') mask |= ADV_APPEND;
+                    else { all_adv = false; break; }
+                }
+                if (all_adv && mask != 0) {
+                    for (size_t k = 0; k < 1 + flen; k++) next_char(lex);
+                    if (mask == ADV_CASEFOLD) tok.type = TOK_ADV_CASEFOLD;
+                    else if (mask == ADV_RECURSIVELY) tok.type = TOK_ADV_RECURSIVELY;
+                    else if (mask == (ADV_CASEFOLD | ADV_RECURSIVELY)) tok.type = TOK_ADV_CASEFOLD_REC;
+                    else tok.type = TOK_ADV_FLAGS;
+                    tok.lit.i64 = mask;
+                    tok.lexeme = (Slice){start, 1 + flen};
+                    return tok;
+                }
             }
             next_char(lex);
             tok.type = TOK_MINUS;
@@ -667,8 +825,9 @@ const char * const *lexer_all_keywords(void) {
         "first", "second", "third", "fourth", "last", "top", "each",
         "it", "them", "that", "error", "previous",
         // Adverbs
-        "recursively", "recursive", "numerically", "descending", "uniquely", "inplace",
-        "concurrently", "casefold", "simulate", "parallel", "background", "ignoring",
+        "recursively", "recursive", "numerically", "numeric", "descending", "reverse", "reversed",
+        "uniquely", "unique", "inplace", "concurrently", "casefold", "insensitive", "simulate",
+        "dryrun", "parallel", "background", "ignoring", "gitignore", "inverting", "inverted",
         // Prepositions & Control
         "into", "onto", "from", "with", "by", "where", "matching", "at", "in",
         "discard", "replacing", "and", "or", "if", "else", "unless",

@@ -1,6 +1,7 @@
 #ifndef _WIN32
 #define _POSIX_C_SOURCE 200809L
 #define _DEFAULT_SOURCE
+#define _DARWIN_C_SOURCE
 #endif
 
 #include "scanner.h"

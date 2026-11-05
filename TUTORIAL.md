@@ -114,6 +114,28 @@ Every valid token in `otto` belongs to one of eight grammatical classes:
 | **PATH / List Mutation** | `prepend "~/.local/bin" $PATH` | `prepend "~/.local/bin" into $PATH` |
 | **Hashing & Encoding** | `hash sha256` / `encode base64` | `hash with "sha256"` / `encode with "base64"` |
 
+### Dual Support for Natural English Words & Standard CLI Flags
+Whether you prefer readable English words or muscle-memory Unix flags (`-i`, `-r`, `-n`, `-u`, `-c`, `-v`, `-k`, `-o`), `otto` supports **both** interchangeably — including combined short-flag clusters (`-ir`, `-nr`, `-iu`, `-ic`, `-iv`):
+
+| Category | Natural English Words | CLI Short & Long Flags | Example |
+|:---|:---|:---|:---|
+| **Case-Insensitive** | `casefold` / `insensitive` | `-i`, `--ignore-case`, `--casefold` | `search -i "todo" "src"` &bull; `replace casefold "a" "b"` |
+| **Recursive** | `recursively` / `recursive` | `-r`, `-R`, `--recursive` | `copy -r "src" "dst"` &bull; `remove -r "tmp"` &bull; `stat -r "src"` |
+| **Numeric Sort** | `numerically` / `numeric` | `-n`, `--numeric`, `--numeric-sort` | `sort -n` &bull; `sort numerically` |
+| **Reverse / Descending** | `descending` / `reverse` | `-d`, `-r` _(on `sort`)_, `--reverse`, `--desc` | `sort -nr` &bull; `sort -k age -r` &bull; `sort age descending` |
+| **Unique / Deduplicate** | `uniquely` / `unique` | `-u`, `--unique` | `sort -iu` &bull; `sort casefold uniquely` |
+| **In-Place File Edit** | `inplace` | `-I`, `--inplace`, `--in-place` | `replace -I "old" "new" "app.conf"` |
+| **Dry-Run Simulation** | `simulate` / `dryrun` | `-s`, `--simulate`, `--dry-run` | `replace -sI "8080" "9090" "app.conf"` |
+| **Parallel / Concurrent**| `parallel` / `concurrently` | `-p`, `-P`, `--parallel`, `--concurrent` | `every -p file "src/*.c": ...` |
+| **Background Job** | `background` | `&`, `-b`, `--bg`, `--background` | `run -b "sleep 10"` &bull; `background run "sleep 10"` |
+| **Gitignore Filter** | `ignoring git` / `gitignore` | `--ignore-git`, `--no-git`, `--gitignore` | `every --ignore-git file "src/*": print.` |
+| **Count Matches/Bytes** | `count` | `-c`, `--count` | `search -ic "otto" "src"` &bull; `count -c` _(bytes)_ |
+| **Invert Match** | `inverting` / `inverted` | `-v`, `--invert`, `--invert-match` | `filter -iv "debug"` &bull; `search -v "TODO" "src"` |
+| **Append Mode** | `onto` | `-a`, `--append`, `--onto` | `"line", write -a "out.txt"` &bull; `write "line" onto "out.txt"` |
+| **Line / Word Scanners** | `lines` / `words` / `bytes` | `-l` / `-w` / `--bytes` | `count -l` &bull; `count -w` &bull; `take -n 5` |
+| **Format Scanners** | `json`, `yaml`, `toml`, `csv`, `jsonl` | `--json`, `--yaml`, `--toml`, `--csv`, `--jsonl` | `read "cfg.toml" --toml` &bull; `hash --crc32` &bull; `encode --hex` |
+| **Prepositions** | `matching`, `by`, `into`, `from`, `discard` | `-e`/`-m`, `-k`, `-o`, `-f`, `-q` | `filter -e "err"` &bull; `sort -k age` &bull; `compile "a.otto" -o "./a"` |
+
 ### Pronoun Pipelining Across Sentences
 Sentences in `otto` can chain results effortlessly using `that` and `them`:
 ```powershell

@@ -125,7 +125,7 @@ static bool should_ignore_entry(const char *name, const char *rel_path, bool is_
     return false;
 }
 
-static void search_single_file(const char *filepath, const char *pattern, size_t plen, bool casefold, Value *results, Arena *arena) {
+static void search_single_file(const char *filepath, const char *pattern, size_t plen, bool casefold, bool invert, Value *results, Arena *arena) {
     if (val_list_len(*results) >= 2000) return;
     FILE *fp = fopen(filepath, "rb");
     if (!fp) return;
@@ -170,9 +170,9 @@ static void search_single_file(const char *filepath, const char *pattern, size_t
         if (llen > 0 && buf[pos + llen - 1] == '\r') llen--;
 
         const char *hit = match_substr(buf + pos, llen, pattern, plen, casefold);
-        if (hit) {
+        if (invert ? (hit == NULL) : (hit != NULL)) {
             if (!file_dup) file_dup = arena_strdup(arena, clean_path);
-            int col_no = (int)(hit - (buf + pos)) + 1;
+            int col_no = hit ? (int)(hit - (buf + pos)) + 1 : 1;
             Slice trimmed = slice_trim((Slice){buf + pos, llen});
             if (trimmed.len > 240) trimmed.len = 240;
             char *tdup = arena_strndup(arena, trimmed.ptr, trimmed.len);
@@ -192,7 +192,7 @@ static void search_single_file(const char *filepath, const char *pattern, size_t
     free(buf);
 }
 
-static void search_walk_dir(const char *dir, const char *pattern, size_t plen, bool casefold,
+static void search_walk_dir(const char *dir, const char *pattern, size_t plen, bool casefold, bool invert,
                             const IgnoreRules *rules, Value *results, Arena *arena, int depth) {
     if (depth > 16 || val_list_len(*results) >= 2000) return;
 
@@ -212,9 +212,9 @@ static void search_walk_dir(const char *dir, const char *pattern, size_t plen, b
 
         if (should_ignore_entry(fd.cFileName, child, is_dir, rules)) continue;
         if (is_dir) {
-            search_walk_dir(child, pattern, plen, casefold, rules, results, arena, depth + 1);
+            search_walk_dir(child, pattern, plen, casefold, invert, rules, results, arena, depth + 1);
         } else {
-            search_single_file(child, pattern, plen, casefold, results, arena);
+            search_single_file(child, pattern, plen, casefold, invert, results, arena);
         }
     } while (FindNextFileA(h, &fd));
     FindClose(h);
@@ -233,9 +233,9 @@ static void search_walk_dir(const char *dir, const char *pattern, size_t plen, b
         if (stat(child, &st) == 0) is_dir = S_ISDIR(st.st_mode);
         if (should_ignore_entry(entry->d_name, child, is_dir, rules)) continue;
         if (is_dir) {
-            search_walk_dir(child, pattern, plen, casefold, rules, results, arena, depth + 1);
+            search_walk_dir(child, pattern, plen, casefold, invert, rules, results, arena, depth + 1);
         } else {
-            search_single_file(child, pattern, plen, casefold, results, arena);
+            search_single_file(child, pattern, plen, casefold, invert, results, arena);
         }
     }
     closedir(d);
@@ -248,18 +248,19 @@ Value dev_search(const char *pattern, const char *root_dir, uint16_t adverbs, Ar
 
     const char *target = (root_dir && root_dir[0]) ? root_dir : ".";
     bool casefold = (adverbs & ADV_CASEFOLD) != 0;
+    bool invert = (adverbs & ADV_INVERT) != 0;
     size_t plen = strlen(pattern);
 
     struct stat st;
     if (stat(target, &st) == 0 && !S_ISDIR(st.st_mode)) {
-        search_single_file(target, pattern, plen, casefold, &results, arena);
+        search_single_file(target, pattern, plen, casefold, invert, &results, arena);
         return results;
     }
 
     IgnoreRules rules;
     memset(&rules, 0, sizeof(rules));
     load_gitignore(target, &rules);
-    search_walk_dir(target, pattern, plen, casefold, &rules, &results, arena, 0);
+    search_walk_dir(target, pattern, plen, casefold, invert, &rules, &results, arena, 0);
     return results;
 }
 

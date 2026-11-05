@@ -53,7 +53,10 @@ typedef enum {
     ADV_SIMULATE = (1 << 7),
     ADV_PARALLEL = (1 << 8),
     ADV_BACKGROUND = (1 << 9),
-    ADV_IGNORING_GIT = (1 << 10)
+    ADV_IGNORING_GIT = (1 << 10),
+    ADV_COUNT = (1 << 13),
+    ADV_INVERT = (1 << 14),
+    ADV_APPEND = (1 << 15)
 } AdverbBit;
 
 // Hook kinds

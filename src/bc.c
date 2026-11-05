@@ -351,7 +351,7 @@ static bool compile_command(BytecodeEmitter *be, ASTNode *cmd) {
             slot_mask |= PREP_AT;
             compile_expr(be, pexpr);
             bc_emit(be, OP_PUSH_ACC, 0, 0, 0, 0);
-        } else if (prep == TOK_PREP_IN && pexpr) {
+        } else if (prep == TOK_PREP_IN && pexpr && verb != TOK_VERB_REPLACE) {
             slot_mask |= PREP_IN;
             compile_expr(be, pexpr);
             bc_emit(be, OP_PUSH_ACC, 0, 0, 0, 0);
@@ -479,6 +479,8 @@ static bool compile_command(BytecodeEmitter *be, ASTNode *cmd) {
             ASTNode *pexpr = cmd->as.cmd.preps[i].expr;
             if (prep == TOK_PREP_WITH && pexpr && pexpr->type == AST_EXPR_LITERAL) {
                 new_idx = bc_add_const(be, pexpr->as.lit.val);
+            } else if (prep == TOK_PREP_IN && pexpr) {
+                compile_expr(be, pexpr);
             } else if (prep == TOK_PREP_INTO) {
                 post_into_expr = pexpr;
             } else if (prep == TOK_PREP_DISCARD) {
@@ -639,6 +641,9 @@ static bool compile_command(BytecodeEmitter *be, ASTNode *cmd) {
                 continue;
             }
             slot_mask |= PREP_INTO;
+            if (verb == TOK_VERB_WRITE && (adverbs & ADV_APPEND)) {
+                slot_mask |= PREP_ONTO;
+            }
         } else if (prep == TOK_PREP_ONTO) {
             slot_mask |= PREP_ONTO;
         } else if (prep == TOK_PREP_FROM) {

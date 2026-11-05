@@ -1127,7 +1127,7 @@ void vm_run(VM *vm) {
 
             case OP_VERB_WRITE: {
                 char *target = NULL;
-                bool append = (inst.slot_mask & PREP_ONTO) != 0;
+                bool append = ((inst.slot_mask & PREP_ONTO) != 0) || ((inst.adverbs & ADV_APPEND) != 0);
                 if (inst.operand != NO_CONST && inst.operand < vm->const_count) {
                     Value tval = vm->constants[inst.operand];
                     target = val_to_string(tval, &vm->iter_arena);
@@ -1360,6 +1360,7 @@ void vm_run(VM *vm) {
                     Value pat_val = vm->constants[inst.operand];
                     if (pat_val.type == VAL_SLICE) {
                         Slice pat = pat_val.as.slice;
+                        bool invert = (inst.adverbs & ADV_INVERT) != 0;
                         Value src = (frame->acc.type != VAL_NIL) ? frame->acc : frame->cur;
                         if (src.type == VAL_SLICE) {
                             Value lines = split_lines_to_list(src.as.slice, &vm->iter_arena);
@@ -1367,22 +1368,32 @@ void vm_run(VM *vm) {
                             Value out = val_list_create(&vm->iter_arena, len);
                             for (size_t i = 0; i < len; i++) {
                                 Value lv = val_list_get(lines, i);
-                                if (find_substr(lv.as.slice.ptr, lv.as.slice.len, pat.ptr, pat.len, casefold)) {
+                                bool hit = (find_substr(lv.as.slice.ptr, lv.as.slice.len, pat.ptr, pat.len, casefold) != NULL);
+                                if (invert ? !hit : hit) {
                                     val_list_append(&out, lv, &vm->iter_arena);
                                 }
                             }
-                            frame->acc = join_list_with_delim(out, "\n", &vm->iter_arena);
+                            if (inst.adverbs & ADV_COUNT) {
+                                frame->acc = val_int((int64_t)val_list_len(out));
+                            } else {
+                                frame->acc = join_list_with_delim(out, "\n", &vm->iter_arena);
+                            }
                         } else if (src.type == VAL_LIST) {
                             size_t len = val_list_len(src);
                             Value out = val_list_create(&vm->iter_arena, len);
                             for (size_t i = 0; i < len; i++) {
                                 Value item = val_list_get(src, i);
                                 char *s = val_to_string(item, &vm->iter_arena);
-                                if (find_substr(s, strlen(s), pat.ptr, pat.len, casefold)) {
+                                bool hit = (find_substr(s, strlen(s), pat.ptr, pat.len, casefold) != NULL);
+                                if (invert ? !hit : hit) {
                                     val_list_append(&out, item, &vm->iter_arena);
                                 }
                             }
-                            frame->acc = out;
+                            if (inst.adverbs & ADV_COUNT) {
+                                frame->acc = val_int((int64_t)val_list_len(out));
+                            } else {
+                                frame->acc = out;
+                            }
                         }
                     }
                     break;
@@ -1554,7 +1565,7 @@ void vm_run(VM *vm) {
                 if (frame->acc.type == VAL_LIST) {
                     Value list = frame->acc;
                     size_t count = val_list_len(list);
-                    bool desc = (inst.adverbs & ADV_DESCENDING) != 0;
+                    bool desc = (inst.adverbs & (ADV_DESCENDING | ADV_RECURSIVELY)) != 0;
                     bool numeric = (inst.adverbs & ADV_NUMERICALLY) != 0;
                     bool casefold = (inst.adverbs & ADV_CASEFOLD) != 0;
                     bool unique = (inst.adverbs & ADV_UNIQUELY) != 0;
@@ -1687,11 +1698,27 @@ void vm_run(VM *vm) {
                 } else if (src.type == VAL_MAP) {
                     frame->acc = val_int((int64_t)(src.as.map ? src.as.map->count : 0));
                 } else if (src.type == VAL_SLICE) {
-                    size_t lines = 0;
                     Slice s = src.as.slice;
-                    for (size_t i = 0; i < s.len; i++) if (s.ptr[i] == '\n') lines++;
-                    if (s.len > 0 && s.ptr[s.len - 1] != '\n') lines++;
-                    frame->acc = val_int((int64_t)lines);
+                    if (inst.scanner == TOK_SCAN_BYTE || inst.scanner == TOK_SCAN_BYTES || (inst.adverbs & ADV_COUNT)) {
+                        frame->acc = val_int((int64_t)s.len);
+                    } else if (inst.scanner == TOK_SCAN_WORD || inst.scanner == TOK_SCAN_WORDS) {
+                        size_t words = 0;
+                        bool in_w = false;
+                        for (size_t i = 0; i < s.len; i++) {
+                            if (isspace((unsigned char)s.ptr[i])) {
+                                in_w = false;
+                            } else if (!in_w) {
+                                in_w = true;
+                                words++;
+                            }
+                        }
+                        frame->acc = val_int((int64_t)words);
+                    } else {
+                        size_t lines = 0;
+                        for (size_t i = 0; i < s.len; i++) if (s.ptr[i] == '\n') lines++;
+                        if (s.len > 0 && s.ptr[s.len - 1] != '\n') lines++;
+                        frame->acc = val_int((int64_t)lines);
+                    }
                 } else {
                     frame->acc = val_int(0);
                 }
@@ -2413,7 +2440,12 @@ void vm_run(VM *vm) {
                 const char *pat = (frame->acc.type == VAL_SLICE)
                     ? slice_to_cstr(frame->acc.as.slice, &vm->iter_arena)
                     : val_to_string(frame->acc, &vm->iter_arena);
-                frame->acc = dev_search(pat, root_dir, inst.adverbs, &vm->iter_arena);
+                Value res = dev_search(pat, root_dir, inst.adverbs, &vm->iter_arena);
+                if (inst.adverbs & ADV_COUNT) {
+                    frame->acc = val_int((int64_t)val_list_len(res));
+                } else {
+                    frame->acc = res;
+                }
                 break;
             }
 

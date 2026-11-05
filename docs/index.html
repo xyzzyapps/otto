@@ -888,9 +888,9 @@
       <!-- 9. Transactional Safety & Undo -->
       <div class="feature-card">
         <div class="card-icon">🛡️</div>
-        <h3>Safe Dry-Run &amp; Instant Undo</h3>
-        <p>Preview file mutations with <code>simulate</code> without touching disk. Modifications are auto-journaled in <code>~/.otto/journal</code> with instant rollback via <code>undo last</code>.</p>
-        <div class="feature-snippet">every file "*.conf": simulate inplace replace "old" "new".<br>undo last.</div>
+        <h3>Safe Dry-Run, Dual CLI Flags &amp; Undo</h3>
+        <p>Use natural English words (<code>casefold</code>, <code>recursively</code>, <code>numerically</code>, <code>simulate</code>, <code>inplace</code>) or standard CLI flags (<code>-i</code>, <code>-r</code>, <code>-nr</code>, <code>-sI</code>, <code>-u</code>, <code>-c</code>, <code>-v</code>) interchangeably, with instant rollback via <code>undo last</code>.</p>
+        <div class="feature-snippet">every file "*.conf": replace -sI "old" "new".<br>undo last.</div>
       </div>
 
       <!-- 10. Embedded SQLite Pushdown -->
@@ -939,8 +939,8 @@
           <code>rg -i "TODO" src/ &amp;&amp; find src/ -type f -size +10k -ls</code>
         </div>
         <div class="comp-cell comp-otto">
-          <div class="comp-label">otto Native Search &amp; Unit Literals</div>
-          <code style="color: var(--accent); font-weight: 700;">search casefold "TODO" in "src", table.<br>every recursively file "src/*" where each's size &gt; 10kb: print each's name.</code>
+          <div class="comp-label">otto Native Search &amp; Unit Literals (English or CLI Flags)</div>
+          <code style="color: var(--accent); font-weight: 700;">search -i "TODO" in "src", table. &nbsp;/* or: search casefold */<br>every -r file "src/*" where each's size &gt; 10kb: print each's name.</code>
         </div>
       </div>
 

@@ -128,6 +128,8 @@ typedef enum {
     TOK_ADV_SIMULATE,
     TOK_ADV_PARALLEL,
     TOK_ADV_BACKGROUND,
+    TOK_ADV_INVERT,
+    TOK_ADV_FLAGS,
     TOK_ADV_IGNORING,
 
     // 6. Prepositions

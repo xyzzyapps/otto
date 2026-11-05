@@ -50,7 +50,32 @@ Download standalone binaries (zero runtime dependencies) from [**GitHub Releases
 
 - **Fish-Class Interactive Shell:** Full cursor editing (`Left`/`Right`/`Home`/`End`/`Ctrl+W`/`Ctrl+U`/`Ctrl+K`), cycling `Tab` completion menu (verbs, variables, `$ENV`, `git` subcommands, file paths), persistent `~/.otto/history` with `Up`/`Down` prefix filtering & `Ctrl+R` fuzzy picker, live `abbr` abbreviations, and deduplicated `prepend`/`append` on `$PATH`.
 - **Beginner-Friendly Onboarding:** Built-in interactive 5-lesson walkthrough (`otto tutor`), offline cheat sheets (`help`, `examples`), visual `^~~~` caret error diagnostics, typo "Did you mean?" suggestions, and Bash-to-Otto Rosetta tips.
-- **Flexible Argument Syntax:** Choose concise zero-preposition transitive style (`replace "old" "new"`, `search "TODO" "src"`, `split ","`, `sort age`) or explicit prepositions (`replace "old" with "new"`, `search "TODO" in "src"`, `split by ","`, `sort by age`).
+- **Flexible Argument Syntax & Dual English / CLI Flags:** Choose concise zero-preposition transitive style (`replace "old" "new"`, `search "TODO" "src"`, `split ","`, `sort age`), explicit prepositions (`replace "old" with "new"`, `search "TODO" in "src"`, `split by ","`, `sort by age`), or standard Unix short/long CLI flags (`-i`, `-r`, `-n`, `-d`, `-u`, `-I`, `-s`, `-b`, `-c`, `-v`, `-a`, `-k`, `-e`, `-o`, `-l`, `-w`, plus combined flags like `sort -nr`, `sort -iu`, `search -ic`, `filter -iv`).
+
+---
+
+## Dual English Words & CLI Flags Reference
+
+Every modifier, scanner, and preposition in `otto` supports **both** readable English words and familiar CLI short/long flags (including combined flag clusters like `-ir`, `-nr`, `-iu`, `-ic`, `-iv`):
+
+| Category | Natural English Words | CLI Short & Long Flags | Example |
+|:---|:---|:---|:---|
+| **Case-Insensitive** | `casefold` / `insensitive` | `-i`, `--ignore-case`, `--casefold` | `search -i "todo" "src"` &bull; `replace casefold "a" "b"` |
+| **Recursive** | `recursively` / `recursive` | `-r`, `-R`, `--recursive` | `copy -r "src" "dst"` &bull; `remove -r "tmp"` &bull; `stat -r "src"` |
+| **Numeric Sort** | `numerically` / `numeric` | `-n`, `--numeric`, `--numeric-sort` | `sort -n` &bull; `sort numerically` |
+| **Reverse / Descending** | `descending` / `reverse` | `-d`, `-r` _(on `sort`)_, `--reverse`, `--desc` | `sort -nr` &bull; `sort -k age -r` &bull; `sort age descending` |
+| **Unique / Deduplicate** | `uniquely` / `unique` | `-u`, `--unique` | `sort -iu` &bull; `sort casefold uniquely` |
+| **In-Place File Edit** | `inplace` | `-I`, `--inplace`, `--in-place` | `replace -I "old" "new" "app.conf"` |
+| **Dry-Run Simulation** | `simulate` / `dryrun` | `-s`, `--simulate`, `--dry-run` | `replace -sI "8080" "9090" "app.conf"` |
+| **Parallel / Concurrent**| `parallel` / `concurrently` | `-p`, `-P`, `--parallel`, `--concurrent` | `every -p file "src/*.c": ...` |
+| **Background Job** | `background` | `&`, `-b`, `--bg`, `--background` | `run -b "sleep 10"` &bull; `background run "sleep 10"` |
+| **Gitignore Filter** | `ignoring git` / `gitignore` | `--ignore-git`, `--no-git`, `--gitignore` | `every --ignore-git file "src/*": print.` |
+| **Count Matches/Bytes** | `count` | `-c`, `--count` | `search -ic "otto" "src"` &bull; `count -c` _(bytes)_ |
+| **Invert Match** | `inverting` / `inverted` | `-v`, `--invert`, `--invert-match` | `filter -iv "debug"` &bull; `search -v "TODO" "src"` |
+| **Append Mode** | `onto` | `-a`, `--append`, `--onto` | `"line", write -a "out.txt"` &bull; `write "line" onto "out.txt"` |
+| **Line / Word Scanners** | `lines` / `words` / `bytes` | `-l` / `-w` / `--bytes` | `count -l` &bull; `count -w` &bull; `take -n 5` |
+| **Format Scanners** | `json`, `yaml`, `toml`, `csv`, `jsonl` | `--json`, `--yaml`, `--toml`, `--csv`, `--jsonl` | `read "cfg.toml" --toml` &bull; `hash --crc32` &bull; `encode --hex` |
+| **Prepositions** | `matching`, `by`, `into`, `from`, `discard` | `-e`/`-m`, `-k`, `-o`, `-f`, `-q` | `filter -e "err"` &bull; `sort -k age` &bull; `compile "a.otto" -o "./a"` |
 - **Natural Pronoun Registers & Unit Literals:** Use `it`, `that`, and `them` to flow data across clauses and sentences, plus human unit literals (`10mb`, `4kb`, `500ms`, `7d`, `:8080`).
 - **Strict Zero-Filler Rule:** No cryptic sigils (`$@`, `awk '{print $2}'`), and no decorative fluff (`the`, `to`, `of`, `an`, `set`, `all`). Every word performs concrete work.
 - **Embedded SQLite & Transactional Safety:** Query `.db` files with native `where` SQL pushdown, preview file mutations via `simulate` (unified diff without touching disk), and roll back anytime with `undo last`.
@@ -144,12 +169,12 @@ $srcs = Get-ChildItem src/*.c | ForEach-Object { $_.FullName }
 zig cc -std=c11 -O2 -Isrc -Ivendor/sqlite3 $srcs sqlite3.o -lwininet -lws2_32 -ladvapi32 -o otto.exe
 ```
 
-### Run Portable Pure C Verification Suite (All 34 Tests)
+### Run Portable Pure C Verification Suite (All 35 Tests)
 ```bash
 zig cc -O2 tests/test_runner.c -o test_runner.exe
 ./test_runner.exe
 ```
-*Output: `TEST RESULTS: 34 / 34 PASSED (100% SUCCESS RATE)`*
+*Output: `TEST RESULTS: 35 / 35 PASSED (100% SUCCESS RATE)`*
 
 ### Launch Interactive Login Shell or Interactive Tutor
 ```bash

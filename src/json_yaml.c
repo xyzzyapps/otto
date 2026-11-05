@@ -487,3 +487,191 @@ Value csv_parse(const char *csv_str, size_t len, Arena *arena) {
     }
     return rows;
 }
+
+// --- TOML Parser ---
+
+static Slice strip_toml_comment(Slice line) {
+    bool in_dq = false, in_sq = false;
+    for (size_t i = 0; i < line.len; i++) {
+        char c = line.ptr[i];
+        if (c == '\\' && in_dq && i + 1 < line.len) {
+            i++;
+            continue;
+        }
+        if (c == '"' && !in_sq) in_dq = !in_dq;
+        else if (c == '\'' && !in_dq) in_sq = !in_sq;
+        else if (c == '#' && !in_dq && !in_sq) {
+            return slice_trim((Slice){line.ptr, i});
+        }
+    }
+    return slice_trim(line);
+}
+
+static Value parse_toml_value(Slice val, Arena *arena) {
+    val = slice_trim(val);
+    if (val.len == 0) return val_slice("", 0);
+
+    // Double-quoted string
+    if (val.len >= 2 && val.ptr[0] == '"' && val.ptr[val.len - 1] == '"') {
+        bool ok = false;
+        return json_parse(val.ptr, val.len, arena, &ok);
+    }
+    // Single-quoted literal string
+    if (val.len >= 2 && val.ptr[0] == '\'' && val.ptr[val.len - 1] == '\'') {
+        char *dup = arena_strndup(arena, val.ptr + 1, val.len - 2);
+        return val_slice(dup, val.len - 2);
+    }
+    // Array [...]
+    if (val.len >= 2 && val.ptr[0] == '[' && val.ptr[val.len - 1] == ']') {
+        bool ok = false;
+        Value jv = json_parse(val.ptr, val.len, arena, &ok);
+        if (ok && jv.type == VAL_LIST) return jv;
+
+        Value list = val_list_create(arena, 8);
+        Slice inner = slice_trim((Slice){val.ptr + 1, val.len - 2});
+        size_t start = 0;
+        bool in_q = false;
+        for (size_t i = 0; i <= inner.len; i++) {
+            if (i < inner.len && (inner.ptr[i] == '"' || inner.ptr[i] == '\'')) in_q = !in_q;
+            if (i == inner.len || (inner.ptr[i] == ',' && !in_q)) {
+                Slice elem = slice_trim((Slice){inner.ptr + start, i - start});
+                if (elem.len > 0) {
+                    val_list_append(&list, parse_toml_value(elem, arena), arena);
+                }
+                start = i + 1;
+            }
+        }
+        return list;
+    }
+    // Inline table { k = v, ... }
+    if (val.len >= 2 && val.ptr[0] == '{' && val.ptr[val.len - 1] == '}') {
+        Value m = val_map_create(arena, 8);
+        Slice inner = slice_trim((Slice){val.ptr + 1, val.len - 2});
+        size_t start = 0;
+        bool in_q = false;
+        for (size_t i = 0; i <= inner.len; i++) {
+            if (i < inner.len && (inner.ptr[i] == '"' || inner.ptr[i] == '\'')) in_q = !in_q;
+            if (i == inner.len || (inner.ptr[i] == ',' && !in_q)) {
+                Slice pair = slice_trim((Slice){inner.ptr + start, i - start});
+                const char *eq = (const char *)memchr(pair.ptr, '=', pair.len);
+                if (eq) {
+                    Slice k = slice_trim((Slice){pair.ptr, (size_t)(eq - pair.ptr)});
+                    Slice v = slice_trim((Slice){eq + 1, (size_t)(pair.ptr + pair.len - eq - 1)});
+                    char *kdup = arena_strndup(arena, k.ptr, k.len);
+                    val_map_set(&m, (Slice){kdup, k.len}, parse_toml_value(v, arena), arena);
+                }
+                start = i + 1;
+            }
+        }
+        return m;
+    }
+    if (slice_eq_str(val, "true")) return val_bool(true);
+    if (slice_eq_str(val, "false")) return val_bool(false);
+
+    // Numeric check (strip TOML '_' digit separators)
+    char num_buf[64];
+    size_t np = 0;
+    bool has_dot = false;
+    for (size_t i = 0; i < val.len && np + 1 < sizeof(num_buf); i++) {
+        if (val.ptr[i] == '_') continue;
+        if (val.ptr[i] == '.') has_dot = true;
+        num_buf[np++] = val.ptr[i];
+    }
+    num_buf[np] = '\0';
+    bool num_ok = false;
+    if (!has_dot) {
+        int64_t iv = slice_to_i64((Slice){num_buf, np}, &num_ok);
+        if (num_ok) return val_int(iv);
+    } else {
+        double fv = slice_to_f64((Slice){num_buf, np}, &num_ok);
+        if (num_ok) return val_float(fv);
+    }
+
+    char *s = arena_strndup(arena, val.ptr, val.len);
+    return val_slice(s, val.len);
+}
+
+Value toml_parse(const char *toml_str, size_t len, Arena *arena, bool *ok) {
+    Value root = val_map_create(arena, 16);
+    Value current_sec = root;
+
+    const char *p = toml_str;
+    const char *end = toml_str + len;
+
+    while (p < end) {
+        const char *nl = p;
+        while (nl < end && *nl != '\n') nl++;
+        Slice raw_line = {p, (size_t)(nl - p)};
+        if (raw_line.len > 0 && raw_line.ptr[raw_line.len - 1] == '\r') raw_line.len--;
+        p = (nl < end && *nl == '\n') ? nl + 1 : nl;
+
+        Slice line = strip_toml_comment(raw_line);
+        if (line.len == 0) continue;
+
+        // Section header: [section] or [a.b]
+        if (line.ptr[0] == '[' && line.ptr[line.len - 1] == ']') {
+            Slice sec_path = slice_trim((Slice){line.ptr + 1, line.len - 2});
+            if (sec_path.len >= 2 && sec_path.ptr[0] == '[' && sec_path.ptr[sec_path.len - 1] == ']') {
+                sec_path = slice_trim((Slice){sec_path.ptr + 1, sec_path.len - 2});
+            }
+            Value nav = root;
+            size_t s_start = 0;
+            for (size_t i = 0; i <= sec_path.len; i++) {
+                if (i == sec_path.len || sec_path.ptr[i] == '.') {
+                    Slice part = slice_trim((Slice){sec_path.ptr + s_start, i - s_start});
+                    if (part.len >= 2 && part.ptr[0] == '"' && part.ptr[part.len - 1] == '"') {
+                        part.ptr++; part.len -= 2;
+                    }
+                    if (part.len > 0) {
+                        Value child = val_nil();
+                        if (!val_map_get(nav, part, &child) || child.type != VAL_MAP) {
+                            child = val_map_create(arena, 8);
+                            char *kdup = arena_strndup(arena, part.ptr, part.len);
+                            val_map_set(&nav, (Slice){kdup, part.len}, child, arena);
+                        }
+                        nav = child;
+                    }
+                    s_start = i + 1;
+                }
+            }
+            current_sec = nav;
+            continue;
+        }
+
+        // key = value
+        const char *eq = (const char *)memchr(line.ptr, '=', line.len);
+        if (eq) {
+            Slice key = slice_trim((Slice){line.ptr, (size_t)(eq - line.ptr)});
+            Slice val = slice_trim((Slice){eq + 1, (size_t)(line.ptr + line.len - eq - 1)});
+            if (key.len >= 2 && ((key.ptr[0] == '"' && key.ptr[key.len - 1] == '"') ||
+                                 (key.ptr[0] == '\'' && key.ptr[key.len - 1] == '\''))) {
+                key.ptr++;
+                key.len -= 2;
+            }
+            char *kdup = arena_strndup(arena, key.ptr, key.len);
+            val_map_set(&current_sec, (Slice){kdup, key.len}, parse_toml_value(val, arena), arena);
+        }
+    }
+
+    if (ok) *ok = true;
+    return root;
+}
+
+Value jsonl_parse(const char *jsonl_str, size_t len, Arena *arena) {
+    Value list = val_list_create(arena, 32);
+    const char *p = jsonl_str;
+    const char *end = jsonl_str + len;
+    while (p < end) {
+        const char *nl = p;
+        while (nl < end && *nl != '\n') nl++;
+        Slice line = slice_trim((Slice){p, (size_t)(nl - p)});
+        p = (nl < end && *nl == '\n') ? nl + 1 : nl;
+        if (line.len == 0) continue;
+        bool ok = false;
+        Value item = json_parse(line.ptr, line.len, arena, &ok);
+        if (ok) {
+            val_list_append(&list, item, arena);
+        }
+    }
+    return list;
+}

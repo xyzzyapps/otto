@@ -6,160 +6,159 @@
 
 > **The Zero-Filler English Automation Shell & Systems Language**
 
-`otto` is a fast, zero-dependency shell language written in C11. It replaces complex combinations of `bash`, `awk`, `sed`, `jq`, `make`, `sqlite3`, `curl`, `watchexec`, `zoxide`, `eza`, `hyperfine`, `miller`, `starship`, and `fzf` with a single static binary and clean, zero-filler English syntax.
+`otto` is an ultra-fast, zero-dependency interactive login shell and automation language written in pure C11. It replaces complex combinations of `bash`, `fish`, `awk`, `sed`, `jq`, `rg`, `fd`, `eza`, `bat`, `delta`, `just`, `direnv`, `duf`, `dust`, `lsof`, `sqlite3`, `curl`, `watchexec`, `zoxide`, `hyperfine`, `miller`, `starship`, and `fzf` with a **single static binary** and clean, zero-filler English sentences.
 
 ---
 
-## 7 Modern Command-Line Capabilities Built-in
+## Prebuilt Static Binaries
+
+Download standalone binaries (zero runtime dependencies) from [**GitHub Releases (`v1.0.0`)**](https://github.com/xyzzyapps/otto/releases/tag/v1.0.0):
+
+| Platform | Architecture | Binary |
+|:---|:---|:---|
+| **Windows** | `x86_64` | [`otto-windows-x86_64.exe`](https://github.com/xyzzyapps/otto/releases/latest/download/otto-windows-x86_64.exe) |
+| **Linux** | `x86_64` | [`otto-linux-x86_64`](https://github.com/xyzzyapps/otto/releases/latest/download/otto-linux-x86_64) |
+| **Linux** | `ARM64` (`aarch64`) | [`otto-linux-aarch64`](https://github.com/xyzzyapps/otto/releases/latest/download/otto-linux-aarch64) |
+| **macOS** | `Apple Silicon` (`M1–M4`) | [`otto-macos-aarch64`](https://github.com/xyzzyapps/otto/releases/latest/download/otto-macos-aarch64) |
+| **macOS** | `Intel` (`x86_64`) | [`otto-macos-x86_64`](https://github.com/xyzzyapps/otto/releases/latest/download/otto-macos-x86_64) |
+
+---
+
+## Modern CLI Utilities Built Natively Into `otto`
 
 | Traditional Utility Replaced | What Developers Usually Install | Native `otto` Syntax |
 |:---|:---|:---|
-| **`curl` + `jq`** | `curl -s url \| jq .field` | `fetch "https://api.../user" json, print each's name.` |
-| **`watchexec` / `entr`** | `find src/ \| entr -r cargo test` | `watch file "src": run "zig build".` |
+| **`ripgrep` (`rg`) / `grep`** | `rg -i "TODO" src/` | `search casefold "TODO" in "src", table.` |
+| **`eza -la` / `fd` / `stat`** | `eza -la --sort=size` | `stat "src/*", sort size descending, table.` |
+| **`bat` / `less`** | `bat src/main.c` | `view "src/main.c".` |
+| **`git` + `delta` / `lazygit`** | `git log --oneline` / `git status -s` | `read commits, table.` &bull; `read status, table.` &bull; `read diff, print.` |
+| **`curl` + `jq` / `yq` / `taplo`** | `curl -s url \| jq .` / TOML & JSONL | `fetch "https://api.../user" json` &bull; `read "Cargo.toml" toml` &bull; `every jsonl "events.jsonl": ...` |
+| **`sha256sum` / `base64` / `uuidgen`** | `echo -n hi \| sha256sum` | `"hi", hash sha256.` &bull; `encode base64` / `decode url` &bull; `uuid.` |
+| **`lsof` / `ss` / `netstat`** | `lsof -i :8080` | `every port where port == :8080: kill.` or `read ports, table.` |
+| **`duf` / `dust` / `du` / `df`** | `duf` & `dust src/` | `disk, table.` (mounts) &bull; `disk "src", table.` (folder breakdown) |
+| **`just` / `make`** | `just --list` & `just deploy prod` | `otto --tasks` &bull; `otto task deploy prod` (reads `Ottofile`) |
+| **`direnv` / `dotenv`** | `eval "$(direnv hook bash)"` | Automatic `.env` loading on startup and `cd` / `jump` / `back` |
+| **`watchexec` / `entr`** | `find src/ \| entr -r zig build` | `watch file "src": run "zig build".` |
 | **`zoxide` / `autojump`** | `z proj` | `jump "proj"` |
-| **`eza --tree` / `fd`** | `eza --tree --ignore-glob ".git"` | `read "." tree, print.` or `every ignoring git file: print.` |
 | **`hyperfine`** | `hyperfine --runs 10 'git status'` | `benchmark 10 "git status", table.` |
 | **`miller` / `sort \| uniq -c`** | `mlr --csv count-distinct -f dept` | `read "fruits.txt", tally, table.` or `group by dept` |
-| **`starship` + `fish`** | Starship prompt + fish ghost text | Dynamic `otto <dir> (branch) [ms] > ` prompt + inline ghost autocomplete |
+| **`fish` + `starship` + `fzf`** | Prompt + autosuggest + `abbr` + `Ctrl+R` | Dynamic `otto <dir> (branch) [ms]` prompt, `Tab` menu, `Ctrl+R` fuzzy history, `abbr` |
 
 ---
 
 ## Key Highlights
 
-- **Flexible Argument Syntax:** Use either concise zero-preposition transitive style (`replace "old" "new"`, `split ","`, `sort age`) or explicit English prepositions (`replace "old" with "new"`, `split by ","`, `sort by age`).
-- **Natural Pronoun Registers:** Use `it` for current clause value, `that` for previous sentence output, and `them` for active list/token streams.
-- **Implicit Stdin Stream Processing:** Pipe any stream into `otto -n -c 'print each.'` (`-n` / `--stdin`) and `otto` automatically handles the per-line stream loop.
-- **Strict Zero-Filler Rule:** No cryptic sigils (`$@`, `awk '{print $2}'`), and no decorative fluff (`the`, `a`, `to`, `of`, `set`, `all`). Every word performs concrete work.
-- **Ultra-Fast 4-Register VM:** Flat 64-bit bytecode interpreter with per-iteration arena recycle (`iter_arena`) for zero-allocation stream loops and guaranteed Tail Call Optimization ($O(1)$ stack recursion).
-- **Embedded SQLite Engine:** Query and insert directly into `.db` files with automatic schema generation and native `where` query pushdown.
-- **Transactional File Safety:** Preview file mutations with `simulate` (unified diff without touching disk) and roll back anytime with `undo last`.
-- **Interactive TUI Built-in:** Native fuzzy selector (`pick`), box-drawing terminal grids (`table`), and Unicode charts (`chart`) with zero external packages.
-- **Single-Binary Compiler:** Self-bundle any `.otto` script into a standalone, zero-dependency executable (`compile "tool.otto" into "./tool"`).
-- **Interactive Login Ergonomics:** Quote-free command passthrough (`git commit -m "fix"`), directory ring buffer (`back`, `dirs`), `$ENV` synchronization, and history substitution (`repeat previous`, `previous's last`).
+- **Fish-Class Interactive Shell:** Full cursor editing (`Left`/`Right`/`Home`/`End`/`Ctrl+W`/`Ctrl+U`/`Ctrl+K`), cycling `Tab` completion menu (verbs, variables, `$ENV`, `git` subcommands, file paths), persistent `~/.otto/history` with `Up`/`Down` prefix filtering & `Ctrl+R` fuzzy picker, live `abbr` abbreviations, and deduplicated `prepend`/`append` on `$PATH`.
+- **Beginner-Friendly Onboarding:** Built-in interactive 5-lesson walkthrough (`otto tutor`), offline cheat sheets (`help`, `examples`), visual `^~~~` caret error diagnostics, typo "Did you mean?" suggestions, and Bash-to-Otto Rosetta tips.
+- **Flexible Argument Syntax:** Choose concise zero-preposition transitive style (`replace "old" "new"`, `search "TODO" "src"`, `split ","`, `sort age`) or explicit prepositions (`replace "old" with "new"`, `search "TODO" in "src"`, `split by ","`, `sort by age`).
+- **Natural Pronoun Registers & Unit Literals:** Use `it`, `that`, and `them` to flow data across clauses and sentences, plus human unit literals (`10mb`, `4kb`, `500ms`, `7d`, `:8080`).
+- **Strict Zero-Filler Rule:** No cryptic sigils (`$@`, `awk '{print $2}'`), and no decorative fluff (`the`, `to`, `of`, `an`, `set`, `all`). Every word performs concrete work.
+- **Embedded SQLite & Transactional Safety:** Query `.db` files with native `where` SQL pushdown, preview file mutations via `simulate` (unified diff without touching disk), and roll back anytime with `undo last`.
+- **Single-Binary Compiler:** Self-bundle any `.otto` script into a standalone executable (`compile "tool.otto" into "./tool"`).
 
 ---
 
-## 10-Second Showcase
+## 15-Second Showcase
 
-### 1. AWK Replacement (Stream Aggregation)
+### 1. Multi-File `.gitignore`-Aware Code Search & Rich File Metadata (`rg` + `fd` + `eza`)
 ```bash
-# Sum scores from file
-before: 0 into s. every line "scores.txt": add 2nd number into s. after: print s.
+# Search codebase respecting .gitignore and render a structured terminal grid
+search casefold "TODO" in "src", table.
+
+# Filter files using human unit literals and inspect metadata
+every recursively file "src/*" where each's size > 10kb: print each's name.
+stat "src/*", sort size descending, take 5, table.
 ```
 
-### 2. jq Replacement (JSON Filter & Sort)
+### 2. Syntax-Highlighted Pager & Native Structured Git Scanners (`bat` + `delta`)
 ```bash
-read "users.json" json, take where each's active == true, sort by age descending, print each's name.
+# View source file with syntax colors, line numbers, and interactive pager
+view "src/vm.c".
+
+# Query git status, commits, branches, and colored diffs as structured streams
+read status, table.
+read commits, take 5, table.
+read diff, print.
 ```
 
-### 3. Safe Batch In-Place Refactoring (Dry-Run & Rollback)
+### 3. Crypto, Encoding, UUIDs, TOML & JSONL (`sha256sum` + `base64` + `taplo` + `jq`)
 ```bash
-# Preview diff without touching disk
-every file "*.conf": simulate inplace replace "8080" with "9090".
+"hello world", hash sha256, print.
+"otto shell", encode base64, decode base64, print.
+uuid, print.
 
-# Apply with auto-journaling in ~/.otto/journal
-every file "*.conf": inplace replace "8080" with "9090".
+read "Cargo.toml" toml into cfg. print cfg's package's name.
+every jsonl "events.jsonl" where each's status >= 500: print each's service.
+```
 
-# Instant rollback if anything broke
+### 4. Port Management, Disk Breakdown & `Ottofile` Task Runner (`lsof` + `duf` + `dust` + `just`)
+```bash
+# Inspect listening sockets and mounted filesystems
+read ports, table.
+disk, table.
+disk "src", table.
+
+# List and execute recipes defined in Ottofile / tasks.otto
+otto --tasks
+otto task build release
+```
+
+### 5. Fish-Style Abbreviations, `$PATH` Hygiene & Beginner Tutor
+```bash
+# Register live abbreviations (expands on Space/Enter in REPL and in scripts)
+abbr "gs" "read status, table"
+abbr "gc" "git commit -m"
+
+# Deduplicated $PATH management (no more manual colon string surgery)
+prepend "~/.local/bin" into $PATH.
+
+# Launch built-in cheat sheets or the 5-minute interactive tutor
+otto help search
+otto examples git
+otto tutor
+```
+
+### 6. Safe Batch Refactoring, Embedded SQLite & Standalone Binary Bundling
+```bash
+# Preview unified diff without touching disk, apply with journaling, or roll back
+every file "*.conf": simulate inplace replace "8080" "9090".
+every file "*.conf": inplace replace "8080" "9090".
 undo last.
-```
 
-### 4. Native SQLite Database Stream
-```bash
-# Auto-creates table and inserts record
+# Auto-create SQLite schema and query with pushed-down SQL WHERE
 write {host: "web1", cpu: 85} onto "ops.db:metrics".
-
-# Query with pushed-down WHERE clause
 every row "ops.db:metrics" where cpu >= 80: print host.
-```
 
-### 5. Interactive Fuzzy Process Killer (replaces `ps + grep + fzf + kill`)
-```bash
-every process: pick, kill.
-```
-
-### 6. Native REST Stream & HTTP POST (replaces `curl + jq`)
-```bash
-# Fetch and parse JSON live
-fetch "https://jsonplaceholder.typicode.com/todos/1" json, print each's title.
-
-# Post JSON payload directly onto URL
-write {status: "ok", service: "otto"} onto "https://httpbin.org/post", print.
-```
-
-### 7. Statistical Benchmarking (replaces `hyperfine`)
-```bash
-# Run 10 trials, calculate mean, min, max, stddev, and print as table
-benchmark 10 "git status", table.
-```
-
-### 8. Frecency Smart Jumping (replaces `zoxide / autojump`)
-```bash
-# Jump to highest-frecency directory matching substring
-jump "src"
-```
-
-### 9. Frequency Tally & Grouping (replaces `miller / sort | uniq -c`)
-```bash
-# Count occurrences and render terminal grid
-read "access.log", tally, table.
-```
-
-### 10. File Change Watcher Loop (replaces `watchexec / entr`)
-```bash
-# Watch files and auto-rebuild on modification
-watch file "src": run "zig build".
-```
-
-### 11. Asynchronous Job Control (replaces `&`, `jobs`, `fg`, `kill`)
-```bash
-# Launch a background process and track its PID/job ID
-background run "python -m http.server 8080"
-
-# List active jobs in a formatted terminal table
-jobs, table.
-
-# Resume job 1 in foreground or terminate
-resume 1.
-kill 1.
+# Bundle script into a zero-dependency native binary
+compile "deploy.otto" into "./deploy".
 ```
 
 ---
 
 ## Quick Start
 
-### Build with `zig cc` (Zero Setup)
+### Build from Source with `zig cc` (Zero Setup)
 ```powershell
-$files = Get-ChildItem src/*.c | ForEach-Object { $_.FullName }
-zig cc -Isrc -Ivendor/sqlite3 $files vendor/sqlite3/libsqlite3.a -lwininet -o otto.exe
+zig cc -O2 -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -c vendor/sqlite3/sqlite3.c -o sqlite3.o
+$srcs = Get-ChildItem src/*.c | ForEach-Object { $_.FullName }
+zig cc -std=c11 -O2 -Isrc -Ivendor/sqlite3 $srcs sqlite3.o -lwininet -lws2_32 -ladvapi32 -o otto.exe
 ```
 
-### Run Verification Suites
-
-#### Option 1: Portable Pure C Test Runner (Cross-Platform, No PowerShell Needed)
+### Run Portable Pure C Verification Suite (All 34 Tests)
 ```bash
-# Compile and run the unified C test suite (all 28 tests)
-zig cc tests/test_runner.c -o test_runner.exe
+zig cc -O2 tests/test_runner.c -o test_runner.exe
 ./test_runner.exe
 ```
+*Output: `TEST RESULTS: 34 / 34 PASSED (100% SUCCESS RATE)`*
 
-#### Option 2: PowerShell Runners
-```powershell
-# 14 Master Specification Tests
-pwsh -File tests/run_master_tests.ps1
-
-# 7 Modern Capabilities Tests
-pwsh -File tests/test_new_features.ps1
-```
-*Output: `TEST RESULTS: 28 / 28 PASSED (100% SUCCESS RATE)`*
-
-### Run Interactive Shell (Starship Prompt + Ghost Autocomplete)
-```powershell
-.\otto.exe
+### Launch Interactive Login Shell or Interactive Tutor
+```bash
+./otto          # Interactive shell with Starship prompt, Tab menu, Ctrl+R & ghost autocomplete
+./otto tutor    # 5-lesson interactive beginner walkthrough
 ```
 
 ---
 
 ## Documentation
 
-For a comprehensive guide covering all syntax, registers, verbs, build rules, FFI, and production recipes, see [**`TUTORIAL.md`**](file:///C:/Users/manic/Documents/PROG/oesh/TUTORIAL.md).
+For the complete guide covering grammar, registers, developer CLI utilities, git integration, TOML/JSONL/crypto, `Ottofile` tasks, interactive REPL shortcuts, SQLite streams, FFI, and production recipes, see [**`TUTORIAL.md`**](TUTORIAL.md).

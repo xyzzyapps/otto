@@ -59,6 +59,20 @@ typedef enum {
     TOK_VERB_JOBS,
     TOK_VERB_RESUME,
     TOK_VERB_REPEAT,
+    TOK_VERB_SEARCH,
+    TOK_VERB_STAT,
+    TOK_VERB_VIEW,
+    TOK_VERB_HASH,
+    TOK_VERB_ENCODE,
+    TOK_VERB_DECODE,
+    TOK_VERB_UUID,
+    TOK_VERB_DISK,
+    TOK_VERB_ABBR,
+    TOK_VERB_PREPEND,
+    TOK_VERB_APPEND,
+    TOK_VERB_HELP,
+    TOK_VERB_EXAMPLES,
+    TOK_VERB_TUTOR,
 
     // 3. Scanners
     TOK_SCAN_LINE,
@@ -78,11 +92,19 @@ typedef enum {
     TOK_SCAN_JSON,
     TOK_SCAN_CSV,
     TOK_SCAN_YAML,
+    TOK_SCAN_TOML,
+    TOK_SCAN_JSONL,
     TOK_SCAN_URLS,
     TOK_SCAN_EMAILS,
     TOK_SCAN_HOST,
     TOK_SCAN_HOSTS,
     TOK_SCAN_TREE,
+    TOK_SCAN_PORT,
+    TOK_SCAN_PORTS,
+    TOK_SCAN_STATUS,
+    TOK_SCAN_COMMITS,
+    TOK_SCAN_BRANCHES,
+    TOK_SCAN_DIFF,
 
     // 4. Ordinals
     TOK_ORD_FIRST,
@@ -116,6 +138,7 @@ typedef enum {
     TOK_PREP_WHERE,
     TOK_PREP_MATCHING,
     TOK_PREP_AT,
+    TOK_PREP_IN,
     TOK_PREP_DISCARD,
     TOK_PREP_REPLACING,
 
@@ -208,5 +231,6 @@ bool token_is_ordinal(OttoTokenType type);
 bool token_is_adverb(OttoTokenType type);
 bool token_is_prep(OttoTokenType type);
 bool token_is_filler(const char *word, size_t len);
+const char * const *lexer_all_keywords(void);
 
 #endif // OTTO_LEXER_H

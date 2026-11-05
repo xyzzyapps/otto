@@ -1,5 +1,7 @@
 #include "scanner.h"
 #include "ast.h"
+#include "json_yaml.h"
+#include "dev_tools.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -384,6 +386,43 @@ static void tree_stream_close(StreamDesc *s) {
     (void)s;
 }
 
+// Generic ValueList Stream (for ports, git status/commits/branches/diff)
+typedef struct ListStream {
+    Value list;
+    size_t index;
+} ListStream;
+
+static bool list_stream_next(StreamDesc *s, Value *out, Arena *arena) {
+    ListStream *ls = (ListStream *)s->handle;
+    if (!ls || ls->list.type != VAL_LIST || ls->index >= val_list_len(ls->list)) {
+        s->eof = true;
+        return false;
+    }
+    *out = val_clone_to_arena(val_list_get(ls->list, ls->index++), arena);
+    return true;
+}
+
+static void list_stream_close(StreamDesc *s) {
+    (void)s;
+}
+
+static bool jsonl_stream_next(StreamDesc *s, Value *out, Arena *arena) {
+    FileLineStream *fl = (FileLineStream *)s->handle;
+    if (!fl || !fl->fp) return false;
+    while (fgets(fl->buffer, sizeof(fl->buffer), fl->fp)) {
+        Slice trimmed = slice_trim((Slice){fl->buffer, strlen(fl->buffer)});
+        if (trimmed.len == 0) continue;
+        bool ok = false;
+        Value parsed = json_parse(trimmed.ptr, trimmed.len, arena, &ok);
+        if (ok) {
+            *out = parsed;
+            return true;
+        }
+    }
+    s->eof = true;
+    return false;
+}
+
 StreamDesc *scanner_open_stream(OttoTokenType scanner, const char *source, uint16_t adverbs, Arena *arena) {
     StreamDesc *sd = (StreamDesc *)arena_alloc_zero(arena, sizeof(StreamDesc));
     sd->eof = false;
@@ -432,6 +471,64 @@ StreamDesc *scanner_open_stream(OttoTokenType scanner, const char *source, uint1
         sd->handle = ps;
         sd->next = process_stream_next;
         sd->close = process_stream_close;
+        return sd;
+    }
+
+    if (scanner == TOK_SCAN_PORT || scanner == TOK_SCAN_PORTS) {
+        ListStream *ls = (ListStream *)arena_alloc_zero(arena, sizeof(ListStream));
+        ls->list = dev_scan_ports(arena);
+        sd->handle = ls;
+        sd->next = list_stream_next;
+        sd->close = list_stream_close;
+        return sd;
+    }
+
+    if (scanner == TOK_SCAN_STATUS || scanner == TOK_SCAN_COMMITS || scanner == TOK_SCAN_BRANCHES) {
+        ListStream *ls = (ListStream *)arena_alloc_zero(arena, sizeof(ListStream));
+        ls->list = dev_git_scan(scanner, source, arena);
+        sd->handle = ls;
+        sd->next = list_stream_next;
+        sd->close = list_stream_close;
+        return sd;
+    }
+
+    if (scanner == TOK_SCAN_DIFF) {
+        ListStream *ls = (ListStream *)arena_alloc_zero(arena, sizeof(ListStream));
+        Value dslice = dev_git_scan(TOK_SCAN_DIFF, source, arena);
+        Value lines = val_list_create(arena, 32);
+        if (dslice.type == VAL_SLICE && dslice.as.slice.len > 0) {
+            const char *p = dslice.as.slice.ptr;
+            const char *end = p + dslice.as.slice.len;
+            while (p < end) {
+                const char *nl = p;
+                while (nl < end && *nl != '\n') nl++;
+                val_list_append(&lines, val_slice(p, (size_t)(nl - p)), arena);
+                p = (nl < end) ? nl + 1 : end;
+            }
+        }
+        ls->list = lines;
+        sd->handle = ls;
+        sd->next = list_stream_next;
+        sd->close = list_stream_close;
+        return sd;
+    }
+
+    if (scanner == TOK_SCAN_JSONL) {
+        FileLineStream *fl = (FileLineStream *)arena_alloc_zero(arena, sizeof(FileLineStream));
+        if (source && source[0] && strcmp(source, "stdin") != 0 && strcmp(source, "-") != 0) {
+            fl->fp = fopen(source, "r");
+            fl->close_on_finish = true;
+        } else {
+            fl->fp = stdin;
+            fl->close_on_finish = false;
+        }
+        if (!fl->fp) {
+            sd->eof = true;
+            return sd;
+        }
+        sd->handle = fl;
+        sd->next = jsonl_stream_next;
+        sd->close = file_lines_close;
         return sd;
     }
 

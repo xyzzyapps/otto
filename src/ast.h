@@ -35,6 +35,7 @@ typedef enum {
     PREP_WHERE = (1 << 5),
     PREP_MATCHING = (1 << 6),
     PREP_AT = (1 << 7),
+    PREP_IN = (1 << 8),
     PREP_DISCARD = (1 << 9),
     PREP_REPLACING = (1 << 11)
 } PrepBit;

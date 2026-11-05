@@ -16,4 +16,10 @@ Value yaml_parse(const char *yaml_str, size_t len, Arena *arena, bool *ok);
 // Parse CSV string into VAL_LIST of VAL_MAP (header-keyed rows)
 Value csv_parse(const char *csv_str, size_t len, Arena *arena);
 
+// Parse TOML string into VAL_MAP (supports [section], [a.b], strings, numbers, bools, arrays)
+Value toml_parse(const char *toml_str, size_t len, Arena *arena, bool *ok);
+
+// Parse NDJSON / JSON Lines string into VAL_LIST
+Value jsonl_parse(const char *jsonl_str, size_t len, Arena *arena);
+
 #endif // OTTO_JSON_YAML_H

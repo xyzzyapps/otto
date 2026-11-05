@@ -7,6 +7,9 @@
 #include "bc.h"
 #include "bundle.h"
 #include "repl.h"
+#include "shell_env.h"
+#include "help_tutor.h"
+#include "tui.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -21,7 +24,7 @@ static void run_source(VM *vm, const char *source, size_t len, bool is_one_liner
     ASTNode *prog = parser_parse_program(&parser);
 
     if (parser.has_error) {
-        fprintf(stderr, "Syntax error: %s\n", parser.error_msg);
+        help_print_diagnostic(source, len, parser.error_line, parser.error_col, parser.error_msg);
         arena_free(&parse_arena);
         return;
     }
@@ -56,6 +59,7 @@ int main(int argc, char **argv) {
     if (bundle_has_embedded_bytecode(self_exe, &embedded_bc, &embedded_len)) {
         VM vm;
         vm_init(&vm);
+        shell_load_dotenv(".");
         bundle_load_into_vm(&vm, embedded_bc, embedded_len);
         vm_run(&vm);
         free(embedded_bc);
@@ -66,10 +70,13 @@ int main(int argc, char **argv) {
     // 2. Command Line Modes
     VM vm;
     vm_init(&vm);
+    shell_load_dotenv(".");
 
     bool is_one_liner = false;
     bool stdin_loop = false;
     bool rpc_mode = false;
+    bool list_tasks_mode = false;
+    const char *custom_ottofile = NULL;
     const char *code_str = NULL;
     const char *script_file = NULL;
 
@@ -83,6 +90,40 @@ int main(int argc, char **argv) {
             stdin_loop = true;
             is_one_liner = true;
             code_str = argv[++i];
+        } else if (strcmp(argv[i], "-f") == 0 && i + 1 < argc) {
+            custom_ottofile = argv[++i];
+        } else if (strcmp(argv[i], "--tasks") == 0 || (!stdin_loop && !code_str && !script_file && strcmp(argv[i], "tasks") == 0)) {
+            list_tasks_mode = true;
+        } else if (!stdin_loop && !code_str && !script_file && strcmp(argv[i], "task") == 0) {
+            const char *tf = custom_ottofile ? custom_ottofile : ottofile_find_default();
+            if (!tf) {
+                fprintf(stderr, "No Ottofile or tasks.otto found in current directory.\n");
+                vm_destroy(&vm);
+                return 1;
+            }
+            if (i + 1 >= argc) {
+                ottofile_list_tasks(tf);
+                vm_destroy(&vm);
+                return 0;
+            }
+            const char *tname = argv[i + 1];
+            int rem_argc = argc - (i + 2);
+            char **rem_argv = (rem_argc > 0) ? &argv[i + 2] : NULL;
+            bool ok = ottofile_run_task(&vm, tf, tname, rem_argc, rem_argv);
+            vm_destroy(&vm);
+            return ok ? 0 : 1;
+        } else if (!stdin_loop && !code_str && !script_file && strcmp(argv[i], "tutor") == 0) {
+            shell_load_rc(&vm);
+            tutor_run(&vm, tui_is_interactive());
+            vm_destroy(&vm);
+            return 0;
+        } else if (!stdin_loop && !code_str && !script_file &&
+                   (strcmp(argv[i], "help") == 0 || strcmp(argv[i], "examples") == 0)) {
+            bool ex_only = (strcmp(argv[i], "examples") == 0);
+            const char *topic = (i + 1 < argc) ? argv[i + 1] : NULL;
+            help_show(topic, ex_only, &vm.iter_arena);
+            vm_destroy(&vm);
+            return 0;
         } else if (strcmp(argv[i], "--rpc") == 0) {
             rpc_mode = true;
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
@@ -90,13 +131,21 @@ int main(int argc, char **argv) {
             vm_destroy(&vm);
             return 0;
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
-            printf("Usage: otto [options] [script.otto]\n\n"
+            printf("Usage: otto [options] [script.otto | subcommand]\n\n"
+                   "Subcommands:\n"
+                   "  tutor                 Launch interactive 5-lesson Otto walkthrough\n"
+                   "  help [topic]          Show built-in cheat sheet & syntax reference\n"
+                   "  examples [topic]      Show copy-pasteable one-liner examples\n"
+                   "  tasks                 List recipes in Ottofile / tasks.otto\n"
+                   "  task <name> [args...] Run a task recipe from Ottofile / tasks.otto\n\n"
                    "Options:\n"
-                   "  -c <code>       Execute inline one-liner\n"
-                   "  -n, --stdin     Implicit stdin stream loop (process lines automatically)\n"
-                   "  --rpc           Agentless SSH RPC mode (executes stdin bytecode)\n"
-                   "  -v, --version   Display version\n"
-                   "  -h, --help      Display help information\n");
+                   "  -c <code>             Execute inline one-liner\n"
+                   "  -n, --stdin           Implicit stdin stream loop (process lines automatically)\n"
+                   "  -f <Ottofile>         Specify custom Ottofile path for `tasks` / `task`\n"
+                   "  --tasks               List recipes in Ottofile / tasks.otto\n"
+                   "  --rpc                 Agentless SSH RPC mode (executes stdin bytecode)\n"
+                   "  -v, --version         Display version\n"
+                   "  -h, --help            Display help information\n");
             vm_destroy(&vm);
             return 0;
         } else if (argv[i][0] != '-') {
@@ -115,15 +164,28 @@ int main(int argc, char **argv) {
         }
     }
 
+    if (list_tasks_mode) {
+        const char *tf = custom_ottofile ? custom_ottofile : ottofile_find_default();
+        if (!tf) {
+            fprintf(stderr, "No Ottofile or tasks.otto found in current directory.\n");
+            vm_destroy(&vm);
+            return 1;
+        }
+        bool ok = ottofile_list_tasks(tf);
+        vm_destroy(&vm);
+        return ok ? 0 : 1;
+    }
+
     if (rpc_mode) {
         fseek(stdin, 0, SEEK_END);
         long bsize = ftell(stdin);
         fseek(stdin, 0, SEEK_SET);
         if (bsize > 0) {
-            uint8_t *bc_buf = (uint8_t *)malloc(bsize);
-            fread(bc_buf, 1, bsize, stdin);
-            bundle_load_into_vm(&vm, bc_buf, bsize);
-            vm_run(&vm);
+            uint8_t *bc_buf = (uint8_t *)malloc((size_t)bsize);
+            if (fread(bc_buf, 1, (size_t)bsize, stdin) > 0) {
+                bundle_load_into_vm(&vm, bc_buf, (size_t)bsize);
+                vm_run(&vm);
+            }
             free(bc_buf);
         }
         vm_destroy(&vm);
@@ -142,11 +204,11 @@ int main(int argc, char **argv) {
             fseek(fp, 0, SEEK_END);
             long fsize = ftell(fp);
             fseek(fp, 0, SEEK_SET);
-            char *src = (char *)malloc(fsize + 1);
-            fread(src, 1, fsize, fp);
-            src[fsize] = '\0';
+            char *src = (char *)malloc((size_t)fsize + 1);
+            size_t nread = fread(src, 1, (size_t)fsize, fp);
+            src[nread] = '\0';
             fclose(fp);
-            run_source(&vm, src, fsize, false, stdin_loop);
+            run_source(&vm, src, nread, false, stdin_loop);
             free(src);
         } else {
             fprintf(stderr, "Cannot open script: %s\n", script_file);

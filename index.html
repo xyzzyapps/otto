@@ -758,12 +758,12 @@
     </div>
     <h1>Finally, a command line shell that <span>speaks plain English</span>.</h1>
     <p>
-      <b>otto</b> is an ultra-fast, zero-filler automation shell and systems language. It eliminates cryptic punctuation, sigils, and brittle flags in favor of clear, stream-processing English sentences.
+      <b>otto</b> is an ultra-fast, zero-filler interactive login shell and systems language. It replaces <code>bash</code>, <code>fish</code>, <code>rg</code>, <code>fd</code>, <code>eza</code>, <code>bat</code>, <code>jq</code>, <code>delta</code>, <code>just</code>, and <code>direnv</code> with one zero-dependency C11 binary and readable English sentences.
     </p>
 
     <div class="cta-group">
-      <a href="#quickstart" class="btn-primary">Get Started in 10s</a>
-      <a href="#interactive-explorer" class="btn-secondary">Explore Interactive Playground</a>
+      <a href="#quickstart" class="btn-primary">Download Binaries &amp; Quick Start</a>
+      <a href="#interactive-explorer" class="btn-secondary">Explore 16 Live Examples</a>
     </div>
   </section>
 
@@ -817,35 +817,59 @@
   <section class="section" id="features">
     <div class="section-header">
       <h2>Everything Built-in. Zero Dependencies.</h2>
-      <p>A single static binary that replaces bash, awk, sed, jq, watchexec, zoxide, hyperfine, and sqlite3.</p>
+      <p>One static binary that replaces modern developer CLI tools, Fish interactive ergonomics, and beginner tutorials out of the box.</p>
     </div>
 
     <div class="features-grid">
-      <!-- 1. Autosuggestions -->
+      <!-- 1. Fish-Class Interactive Shell -->
       <div class="feature-card">
         <div class="card-icon">💡</div>
-        <h3>Fish-Style Autosuggestions</h3>
-        <p>Inline ghost text predicts your next verb or path as you type. Accept with Tab or Right Arrow. Built-in interactive fuzzy picker (<code>pick</code>) for processes and files.</p>
-        <div class="feature-snippet">every process: pick, kill.</div>
+        <h3>Fish-Class Interactive Shell</h3>
+        <p>Starship-style prompt, inline ghost autosuggestions, cycling <code>Tab</code> completion menu (verbs, <code>$ENV</code>, git, paths), <code>Ctrl+R</code> fuzzy history, persistent <code>~/.otto/history</code>, and live <code>abbr</code> expansions.</p>
+        <div class="feature-snippet">abbr "gs" "read status, table" &bull; prepend "~/.local/bin" into $PATH</div>
       </div>
 
-      <!-- 2. Zero Cryptic Sigils -->
+      <!-- 2. Modern Dev CLI Replacements -->
       <div class="feature-card">
-        <div class="card-icon">🚫</div>
-        <h3>Zero Cryptic Sigils</h3>
-        <p>No <code>$@</code>, no <code>${#arr[@]}</code>, no <code>awk '{print $2}'</code>, and no regex gymnastics. Every word is a real transitive English verb or register with 1-to-1 operational semantics.</p>
-        <div class="feature-snippet">before: 0 into total. every line: add 2nd number into total. after: print total.</div>
+        <div class="card-icon">🔍</div>
+        <h3><code>rg</code>, <code>fd</code>, <code>eza</code> &amp; <code>bat</code> Built-in</h3>
+        <p>Recursive <code>.gitignore</code>-aware <code>search</code>, rich <code>stat</code> file metadata with unit literals (<code>10kb</code>, <code>7d</code>, <code>:8080</code>), and syntax-highlighted <code>view</code> with a built-in terminal pager.</p>
+        <div class="feature-snippet">search casefold "TODO" in "src", table.<br>stat "src/*", sort size descending, table.</div>
       </div>
 
-      <!-- 3. Dual Preposition Flexibility -->
+      <!-- 3. Native Structured Git & Formats -->
+      <div class="feature-card">
+        <div class="card-icon">🌿</div>
+        <h3>Structured Git, TOML, JSONL &amp; Crypto</h3>
+        <p>Query <code>status</code>, <code>commits</code>, <code>branches</code>, and <code>delta</code>-colored <code>diff</code> as native maps. Parse JSON, YAML, CSV, TOML, and streaming JSONL, plus <code>hash</code>, <code>encode</code>/<code>decode</code>, and <code>uuid</code>.</p>
+        <div class="feature-snippet">read git commits, take 5, table.<br>"hello", hash sha256 &bull; read "Cargo.toml" toml</div>
+      </div>
+
+      <!-- 4. System Ports, Disk & Ottofile Tasks -->
+      <div class="feature-card">
+        <div class="card-icon">🛠️</div>
+        <h3>Ports, Disk, <code>.env</code> &amp; <code>Ottofile</code> Tasks</h3>
+        <p>Inspect open sockets (<code>read ports</code>), mounted drives &amp; folder sizes (<code>disk</code>), auto-load <code>.env</code> files on <code>cd</code>, and run documented project recipes with <code>otto --tasks</code> / <code>otto task</code>.</p>
+        <div class="feature-snippet">every port where port == :8080: kill.<br>disk "src", table. &bull; otto task deploy prod</div>
+      </div>
+
+      <!-- 5. Beginner-Friendly Tutor & Diagnostics -->
+      <div class="feature-card">
+        <div class="card-icon">🎓</div>
+        <h3>Built-in Tutor, Cheat Sheets &amp; Hints</h3>
+        <p>Learn in 5 minutes with <code>otto tutor</code>, browse offline docs via <code>help</code> &amp; <code>examples</code>, and get visual <code>^~~~</code> caret diagnostics, typo suggestions, and Bash-to-Otto Rosetta tips.</p>
+        <div class="feature-snippet">otto tutor &bull; help search &bull; examples git</div>
+      </div>
+
+      <!-- 6. Dual Preposition Flexibility -->
       <div class="feature-card">
         <div class="card-icon">⚖️</div>
         <h3>Dual Preposition Flexibility</h3>
-        <p>Write how your brain thinks. Choose concise zero-preposition transitive style or explicit prepositional phrasing with 100% interoperability.</p>
-        <div class="feature-snippet">replace "8080" "9090"  &harr;  replace "8080" with "9090"<br>split ","  &harr;  split by "," &bull; sort age  &harr;  sort by age</div>
+        <p>Write how your brain thinks. Choose concise zero-preposition transitive style or explicit prepositional phrasing with 100% bytecode equivalence.</p>
+        <div class="feature-snippet">replace "8080" "9090"  &harr;  replace "8080" with "9090"<br>search "TODO" "src"  &harr;  search "TODO" in "src"</div>
       </div>
 
-      <!-- 4. Pronoun Registers -->
+      <!-- 7. Pronoun Registers -->
       <div class="feature-card">
         <div class="card-icon">🔗</div>
         <h3>Pronoun Register Anaphora</h3>
@@ -853,7 +877,7 @@
         <div class="feature-snippet">"cherry banana apple", split " ", sort them descending, print first.</div>
       </div>
 
-      <!-- 5. Implicit Stdin Streaming -->
+      <!-- 8. Implicit Stdin Streaming -->
       <div class="feature-card">
         <div class="card-icon">⚡</div>
         <h3>Implicit Stdin Streaming (<code>-n</code>)</h3>
@@ -861,15 +885,15 @@
         <div class="feature-snippet">cat access.log | otto -n -c 'print 1st word.'</div>
       </div>
 
-      <!-- 6. Transactional Safety & Undo -->
+      <!-- 9. Transactional Safety & Undo -->
       <div class="feature-card">
         <div class="card-icon">🛡️</div>
-        <h3>Safe Dry-Run & Instant Undo</h3>
+        <h3>Safe Dry-Run &amp; Instant Undo</h3>
         <p>Preview file mutations with <code>simulate</code> without touching disk. Modifications are auto-journaled in <code>~/.otto/journal</code> with instant rollback via <code>undo last</code>.</p>
         <div class="feature-snippet">every file "*.conf": simulate inplace replace "old" "new".<br>undo last.</div>
       </div>
 
-      <!-- 7. Embedded SQLite Pushdown -->
+      <!-- 10. Embedded SQLite Pushdown -->
       <div class="feature-card">
         <div class="card-icon">🗄️</div>
         <h3>Embedded SQLite Streaming</h3>
@@ -877,7 +901,7 @@
         <div class="feature-snippet">every row "ops.db:metrics" where cpu &gt;= 80: print host.</div>
       </div>
 
-      <!-- 8. Standalone Binary Bundler -->
+      <!-- 11. Standalone Binary Bundler -->
       <div class="feature-card">
         <div class="card-icon">📦</div>
         <h3>Single-Binary Self Bundler</h3>
@@ -885,10 +909,10 @@
         <div class="feature-snippet">compile "build_tool.otto" into "./build_tool".</div>
       </div>
 
-      <!-- 9. Process & Job Control -->
+      <!-- 12. Process & Job Control -->
       <div class="feature-card">
         <div class="card-icon">⚙️</div>
-        <h3>Process & Job Control</h3>
+        <h3>Process &amp; Job Control</h3>
         <p>Spawn background tasks asynchronously with <code>background run</code>, inspect active jobs with <code>jobs, table.</code>, bring them to the foreground with <code>resume</code>, or terminate with <code>kill</code>.</p>
         <div class="feature-snippet">background run "server" &bull; jobs, table. &bull; kill 1.</div>
       </div>
@@ -898,17 +922,41 @@
   <!-- Side-by-Side Comparison -->
   <section class="section" id="comparison">
     <div class="section-header">
-      <h2>Comparison: Traditional Shell vs. otto</h2>
-      <p>Clean up decades of arcane flags, escaping rules, and multi-process pipeline glue.</p>
+      <h2>Comparison: Traditional CLI Stack vs. otto</h2>
+      <p>Replace dozens of external utilities, arcane flags, and fragile text-scraping pipes with structured sentences.</p>
     </div>
 
     <div class="comparison-container">
       <div class="comparison-row">
-        <div class="col-header">Classic Unix Shell (Bash + Awk + jq + Sed)</div>
+        <div class="col-header">Classic Unix Stack (Bash + rg + jq + lsof + sed + awk)</div>
         <div class="col-header col-otto">otto Shell</div>
       </div>
 
       <!-- Row 1 -->
+      <div class="comparison-row">
+        <div class="comp-cell">
+          <div class="comp-label">Code Search &amp; File Size Filter (rg + find + du)</div>
+          <code>rg -i "TODO" src/ &amp;&amp; find src/ -type f -size +10k -ls</code>
+        </div>
+        <div class="comp-cell comp-otto">
+          <div class="comp-label">otto Native Search &amp; Unit Literals</div>
+          <code style="color: var(--accent); font-weight: 700;">search casefold "TODO" in "src", table.<br>every recursively file "src/*" where each's size &gt; 10kb: print each's name.</code>
+        </div>
+      </div>
+
+      <!-- Row 2 -->
+      <div class="comparison-row">
+        <div class="comp-cell">
+          <div class="comp-label">Git Inspection &amp; Port Cleanup (git + awk + lsof + kill)</div>
+          <code>git log -n 5 --pretty=format:"%h %an %s" &amp;&amp; kill -9 $(lsof -t -i:8080)</code>
+        </div>
+        <div class="comp-cell comp-otto">
+          <div class="comp-label">otto Structured Git &amp; Port Scanners</div>
+          <code style="color: var(--accent); font-weight: 700;">read git commits, take 5, table.<br>every port where port == :8080: kill.</code>
+        </div>
+      </div>
+
+      <!-- Row 3 -->
       <div class="comparison-row">
         <div class="comp-cell">
           <div class="comp-label">Stream Aggregation (awk)</div>
@@ -920,19 +968,19 @@
         </div>
       </div>
 
-      <!-- Row 2 -->
+      <!-- Row 4 -->
       <div class="comparison-row">
         <div class="comp-cell">
-          <div class="comp-label">REST API JSON Filter (curl + jq)</div>
+          <div class="comp-label">REST API JSON &amp; Config Parsing (curl + jq + taplo)</div>
           <code>curl -s https://api.io/users | jq -r '.[] | select(.age > 21) | .name' | head -n 1</code>
         </div>
         <div class="comp-cell comp-otto">
-          <div class="comp-label">otto Possessive Stream</div>
+          <div class="comp-label">otto Possessive Stream (JSON / YAML / TOML / JSONL)</div>
           <code style="color: var(--accent); font-weight: 700;">fetch "https://api.io/users" json, take where each's age &gt; 21, print first's name.</code>
         </div>
       </div>
 
-      <!-- Row 3 -->
+      <!-- Row 5 -->
       <div class="comparison-row">
         <div class="comp-cell">
           <div class="comp-label">Batch In-Place Replacement (find + sed)</div>
@@ -944,10 +992,10 @@
         </div>
       </div>
 
-      <!-- Row 4 -->
+      <!-- Row 6 -->
       <div class="comparison-row">
         <div class="comp-cell">
-          <div class="comp-label">Frequency Tally & Table (sort | uniq -c)</div>
+          <div class="comp-label">Frequency Tally &amp; Table (sort | uniq -c)</div>
           <code>cat access.log | cut -d' ' -f1 | sort | uniq -c | sort -nr</code>
         </div>
         <div class="comp-cell comp-otto">
@@ -961,17 +1009,25 @@
   <!-- Quick Start -->
   <section class="section" id="quickstart">
     <div class="quickstart-box">
-      <h2>Build in 2 Seconds with <code>zig cc</code></h2>
-      <p>otto is pure C11 with zero external libraries. Compiles instantly into a single self-contained static executable.</p>
+      <h2>Download Prebuilt Binary or Build in 2s with <code>zig cc</code></h2>
+      <p>Zero runtime dependencies. Grab a standalone binary for your OS or compile directly from pure C11 source.</p>
+
+      <div style="display: flex; justify-content: center; gap: 0.65rem; flex-wrap: wrap; margin-bottom: 1.75rem;">
+        <a href="https://github.com/xyzzyapps/otto/releases/latest/download/otto-windows-x86_64.exe" class="btn-secondary" style="padding: 0.55rem 1rem; font-size: 0.9rem;">&#11015; Windows (x64)</a>
+        <a href="https://github.com/xyzzyapps/otto/releases/latest/download/otto-linux-x86_64" class="btn-secondary" style="padding: 0.55rem 1rem; font-size: 0.9rem;">&#11015; Linux (x64)</a>
+        <a href="https://github.com/xyzzyapps/otto/releases/latest/download/otto-linux-aarch64" class="btn-secondary" style="padding: 0.55rem 1rem; font-size: 0.9rem;">&#11015; Linux (ARM64)</a>
+        <a href="https://github.com/xyzzyapps/otto/releases/latest/download/otto-macos-aarch64" class="btn-secondary" style="padding: 0.55rem 1rem; font-size: 0.9rem;">&#11015; macOS (Apple Silicon)</a>
+        <a href="https://github.com/xyzzyapps/otto/releases/latest/download/otto-macos-x86_64" class="btn-secondary" style="padding: 0.55rem 1rem; font-size: 0.9rem;">&#11015; macOS (Intel)</a>
+      </div>
 
       <div class="install-bar">
-        <span>zig cc -Isrc -Ivendor/sqlite3 src/*.c vendor/sqlite3/libsqlite3.a -lwininet -o otto.exe</span>
+        <span>zig cc -std=c11 -O2 -Isrc -Ivendor/sqlite3 src/*.c vendor/sqlite3/sqlite3.c -lwininet -lws2_32 -ladvapi32 -o otto.exe</span>
         <button class="copy-btn-main" onclick="copyInstall()">Copy</button>
       </div>
 
       <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
         <a href="https://github.com/xyzzyapps/otto" target="_blank" class="btn-primary">View GitHub Repository</a>
-        <a href="https://github.com/xyzzyapps/otto/blob/main/TUTORIAL.md" target="_blank" class="btn-secondary">Read Full Tutorial (500+ lines)</a>
+        <a href="https://github.com/xyzzyapps/otto/blob/main/TUTORIAL.md" target="_blank" class="btn-secondary">Read Full Tutorial (25 Chapters)</a>
       </div>
     </div>
   </section>
@@ -996,6 +1052,72 @@
 
   <script>
     const examples = [
+      {
+        id: "code-search",
+        tag: "RIPGREP",
+        title: ".gitignore-Aware Code Search (search)",
+        desc: "Search source trees recursively with structured file, line, col, and text records.",
+        promptDir: "~/repo",
+        cmdRaw: 'otto -c \'search casefold "TODO" in "src", table.\'',
+        cmdHtml: 'otto -c \'<span class="syn-verb">search</span> <span class="syn-adv">casefold</span> <span class="syn-str">"TODO"</span> <span class="syn-adv">in</span> <span class="syn-str">"src"</span><span class="syn-pipe">,</span> <span class="syn-verb">table</span>.\'',
+        output: "┌────────────────┬──────┬─────┬──────────────────────────────────────┐\n│ file           │ line │ col │ text                                 │\n├────────────────┼──────┼─────┼──────────────────────────────────────┤\n│ src/parser.c   │ 142  │ 8   │ // TODO: extend custom unit suffixes │\n│ src/vm.c       │ 891  │ 12  │ // todo: cache compiled sql stmt     │\n└────────────────┴──────┴─────┴──────────────────────────────────────┘",
+        explain: "Replaces ripgrep (rg). Automatically skips .git, node_modules, dist, binary files, and .gitignore patterns, returning structured maps ready for pick, sort, or table."
+      },
+      {
+        id: "stat-units",
+        tag: "EZA + FD",
+        title: "Rich File Metadata & Unit Literals (stat)",
+        desc: "Inspect file sizes, ages, and extensions using first-class human unit literals.",
+        promptDir: "~/repo",
+        cmdRaw: 'otto -c \'stat "src/*", take where each\'s size > 20kb, sort size descending, table.\'',
+        cmdHtml: 'otto -c \'<span class="syn-verb">stat</span> <span class="syn-str">"src/*"</span><span class="syn-pipe">,</span> <span class="syn-verb">take</span> <span class="syn-adv">where</span> <span class="syn-ord">each</span>\'s <span class="syn-noun">size</span> &gt; <span class="syn-num">20kb</span><span class="syn-pipe">,</span> <span class="syn-verb">sort</span> <span class="syn-noun">size</span> <span class="syn-adv">descending</span><span class="syn-pipe">,</span> <span class="syn-verb">table</span>.\'',
+        output: "┌───────────────┬──────────┬─────┬───────┬─────────────────────┐\n│ path          │ name     │ ext │ size  │ modified            │\n├───────────────┼──────────┼─────┼───────┼─────────────────────┤\n│ src/vm.c      │ vm.c     │ c   │ 89412 │ 2026-11-05 12:58:24 │\n│ src/dev.c     │ dev.c    │ c   │ 46108 │ 2026-11-05 12:45:36 │\n└───────────────┴──────────┴─────┴───────┴─────────────────────┘",
+        explain: "Replaces eza -la and fd. Unit literals like 20kb, 10mb, 7d, 500ms, and :8080 evaluate natively, and file slices lazily expose .size, .ext, .age, and .dir."
+      },
+      {
+        id: "git-scanners",
+        tag: "GIT + DELTA",
+        title: "Native Structured Git Scanners",
+        desc: "Query git commits, working-tree status, branches, and colored diffs as data.",
+        promptDir: "~/repo",
+        cmdRaw: "otto -c 'read git commits, take 3, table.'",
+        cmdHtml: 'otto -c \'<span class="syn-verb">read</span> <span class="syn-noun">git commits</span><span class="syn-pipe">,</span> <span class="syn-verb">take</span> <span class="syn-num">3</span><span class="syn-pipe">,</span> <span class="syn-verb">table</span>.\'',
+        output: "┌─────────┬───────────┬────────────┬────────────────────────────────────┐\n│ hash    │ author    │ date       │ message                            │\n├─────────┼───────────┼────────────┼────────────────────────────────────┤\n│ 9f3c18a │ manic     │ 2026-11-05 │ Add modern dev CLI & Fish REPL     │\n│ 45fa3e8 │ manic     │ 2026-11-05 │ Audit VM & add zero-prep verbs     │\n│ 1b82d04 │ manic     │ 2026-11-04 │ Initial C11 4-register bytecode VM │\n└─────────┴───────────┴────────────┴────────────────────────────────────┘",
+        explain: "Built-in git scanners (status, commits, branches, diff) turn repository state directly into typed maps — plus syntax-colored unified diffs via 'read diff, print.'"
+      },
+      {
+        id: "crypto-toml",
+        tag: "CRYPTO + TOML",
+        title: "SHA-256, Base64, UUID & TOML/JSONL",
+        desc: "Hash, encode/decode, mint UUIDs, and parse Cargo.toml or streaming JSONL.",
+        promptDir: "~/sec",
+        cmdRaw: 'otto -c \'"hello", hash sha256, print. read "Cargo.toml" toml into c. print c\'s package\'s name.\'',
+        cmdHtml: 'otto -c \'<span class="syn-str">"hello"</span><span class="syn-pipe">,</span> <span class="syn-verb">hash</span> <span class="syn-noun">sha256</span><span class="syn-pipe">,</span> <span class="syn-verb">print</span>. <span class="syn-verb">read</span> <span class="syn-str">"Cargo.toml"</span> <span class="syn-noun">toml</span> <span class="syn-verb">into</span> <span class="syn-noun">c</span>. <span class="syn-verb">print</span> <span class="syn-noun">c</span>\'s <span class="syn-noun">package</span>\'s <span class="syn-noun">name</span>.\'',
+        output: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824\notto-shell",
+        explain: "Pure C11 SHA-256, CRC32, Base64, Hex, URL encoding, RFC 4122 UUID v4, nested TOML tables, and constant-memory JSONL streams with zero external dependencies."
+      },
+      {
+        id: "ports-disk-tasks",
+        tag: "LSOF + JUST",
+        title: "Ports, Disk Breakdown & Ottofile Tasks",
+        desc: "Inspect open ports, folder sizes, auto-load .env, and run Ottofile recipes.",
+        promptDir: "~/ops",
+        cmdRaw: 'otto -c \'disk "src", take 3, table.\' && otto --tasks',
+        cmdHtml: 'otto -c \'<span class="syn-verb">disk</span> <span class="syn-str">"src"</span><span class="syn-pipe">,</span> <span class="syn-verb">take</span> <span class="syn-num">3</span><span class="syn-pipe">,</span> <span class="syn-verb">table</span>.\' &amp;&amp; otto --tasks',
+        output: "┌────────────────────┬─────────┬──────────┐\n│ path               │ bytes   │ size     │\n├────────────────────┼─────────┼──────────┤\n│ src/vm.c           │ 89412   │ 87.3 KB  │\n│ src/dev_tools.c    │ 46108   │ 45.0 KB  │\n│ src/parser.c       │ 34290   │ 33.5 KB  │\n└────────────────────┴─────────┴──────────┘\nAvailable tasks in Ottofile:\n  build mode     — Compile release binary\n  test           — Run all 34 portable C tests",
+        explain: "Replaces lsof/ss ('read ports'), duf/dust ('disk'), direnv (automatic .env loading on cd), and just/make ('otto --tasks' & 'otto task build release')."
+      },
+      {
+        id: "fish-abbr-tutor",
+        tag: "FISH + TUTOR",
+        title: "Live Abbreviations, $PATH & Built-in Tutor",
+        desc: "Expand Fish-style abbreviations live, manage $PATH, and learn via otto tutor.",
+        promptDir: "~",
+        cmdRaw: 'otto -c \'abbr "gs" "read status, table". prepend "~/.local/bin" into $PATH. help search.\'',
+        cmdHtml: 'otto -c \'<span class="syn-verb">abbr</span> <span class="syn-str">"gs"</span> <span class="syn-str">"read status, table"</span>. <span class="syn-verb">prepend</span> <span class="syn-str">"~/.local/bin"</span> <span class="syn-verb">into</span> <span class="syn-noun">$PATH</span>. <span class="syn-verb">help</span> <span class="syn-noun">search</span>.\'',
+        output: "search  [Developer CLI]\n  Search files recursively (.gitignore-aware, skips binaries).\n  Syntax: search [casefold] <pattern> [in <dir>]  |  search <pattern> <dir>\n  Examples:\n    search \"TODO\" in \"src\", table.\n    search casefold \"error\" \"logs\", pick.",
+        explain: "abbr expands visibly on Space/Enter so history stays readable, prepend/append deduplicates $PATH entries, and 'help' / 'otto tutor' guide beginners offline."
+      },
       {
         id: "stdin-loop",
         tag: "PERL -N",
@@ -1195,7 +1317,7 @@
     }
 
     function copyInstall() {
-      const text = "zig cc -Isrc -Ivendor/sqlite3 src/*.c vendor/sqlite3/libsqlite3.a -lwininet -o otto.exe";
+      const text = "zig cc -std=c11 -O2 -Isrc -Ivendor/sqlite3 src/*.c vendor/sqlite3/sqlite3.c -lwininet -lws2_32 -ladvapi32 -o otto.exe";
       navigator.clipboard.writeText(text);
       const btn = document.querySelector(".copy-btn-main");
       btn.textContent = "Copied!";

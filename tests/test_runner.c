@@ -951,6 +951,309 @@ static bool test_fileops_ffi_hooks_history(char *err, size_t err_sz) {
     return ok;
 }
 
+// Test 29: Multi-File Code Search (`search` + `.gitignore`) & Rich `stat` + Unit Literals
+static bool test_search_stat_units(char *err, size_t err_sz) {
+    mkdir_p("test_srch_dir");
+    mkdir_p("test_srch_dir/ignored_sub");
+    write_file("test_srch_dir/.gitignore", "ignored_sub\n*.secret\n");
+    write_file("test_srch_dir/main.c", "int needle_alpha = 42;\n");
+    write_file("test_srch_dir/notes.txt", "NEEDLE_ALPHA uppercase\n");
+    write_file("test_srch_dir/hidden.secret", "needle_alpha secret\n");
+    write_file("test_srch_dir/ignored_sub/skip.c", "needle_alpha skipped\n");
+
+    char big_buf[2049];
+    memset(big_buf, 'A', 2048);
+    big_buf[2048] = '\0';
+    write_file("test_srch_dir/big.dat", big_buf);
+
+    write_file("test_srch.otto",
+        "search casefold \"needle_alpha\" in \"test_srch_dir\", table.\n"
+        "search \"needle_alpha\" \"test_srch_dir\", print first's line.\n"
+        "stat \"test_srch_dir/*\", take where each's size > 1kb, print first's ext.\n"
+        "every file \"test_srch_dir/*\" where each's size > 1kb: print each's name.\n"
+        "print :8080.\n");
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s test_srch.otto", g_bin);
+    char *out = run_cmd(cmd, NULL);
+
+    remove_file("test_srch.otto");
+    remove_file("test_srch_dir/.gitignore");
+    remove_file("test_srch_dir/main.c");
+    remove_file("test_srch_dir/notes.txt");
+    remove_file("test_srch_dir/hidden.secret");
+    remove_file("test_srch_dir/ignored_sub/skip.c");
+    remove_file("test_srch_dir/big.dat");
+#ifdef _WIN32
+    _rmdir("test_srch_dir/ignored_sub");
+    _rmdir("test_srch_dir");
+#else
+    rmdir("test_srch_dir/ignored_sub");
+    rmdir("test_srch_dir");
+#endif
+
+    bool ok = (strstr(out, "main.c") != NULL &&
+               strstr(out, "notes.txt") != NULL &&
+               strstr(out, "hidden.secret") == NULL &&
+               strstr(out, "skip.c") == NULL &&
+               strstr(out, "dat") != NULL &&
+               strstr(out, "big.dat") != NULL &&
+               strstr(out, "8080") != NULL);
+    if (!ok) snprintf(err, err_sz, "search/stat/unit literals failed: got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 30: Syntax-Highlighted Viewer (`view`) & Native Git Scanners (`status`, `commits`, `branches`)
+static bool test_view_and_git_scanners(char *err, size_t err_sz) {
+#ifdef _WIN32
+    _putenv_s("OTTO_NO_PAGER", "1");
+#else
+    setenv("OTTO_NO_PAGER", "1", 1);
+#endif
+    write_file("test_view_git.otto",
+        "view \"src/main.c\".\n"
+        "read git branches, print first's name.\n"
+        "read commits, print first's hash.\n"
+        "every git branches: print each's name.\n");
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s test_view_git.otto", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("test_view_git.otto");
+
+    bool ok = (strstr(out, "src/main.c") != NULL &&
+               strstr(out, "main") != NULL);
+    if (!ok) snprintf(err, err_sz, "view/git scanners failed: got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 31: Crypto/Encoding (`hash`, `encode`, `decode`, `uuid`) & `toml` / `jsonl` Scanners
+static bool test_crypto_encoding_toml_jsonl(char *err, size_t err_sz) {
+    write_file("test_cfg.toml",
+        "[package]\n"
+        "name = \"otto_pkg\"\n"
+        "port = 8080\n"
+        "[profile.release]\n"
+        "lto = true\n");
+
+    write_file("test_events.jsonl",
+        "{\"svc\": \"web\", \"code\": 200}\n"
+        "{\"svc\": \"auth_err\", \"code\": 503}\n");
+
+    write_file("test_a5.otto",
+        "\"hello\", hash sha256, print.\n"
+        "\"hello\", hash crc32, print.\n"
+        "\"otto shell\", encode base64, decode base64, print.\n"
+        "\"otto\", encode hex, print.\n"
+        "\"6f74746f\", decode hex, print.\n"
+        "\"a b&c\", encode url, print.\n"
+        "\"a%20b%26c\", decode url, print.\n"
+        "uuid into u. print u.\n"
+        "read \"test_cfg.toml\" toml into cfg. print cfg's package's name. print cfg's profile's release's lto.\n"
+        "every jsonl \"test_events.jsonl\" where each's code >= 500: print each's svc.\n");
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s test_a5.otto", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("test_a5.otto");
+    remove_file("test_cfg.toml");
+    remove_file("test_events.jsonl");
+
+    bool ok = (strstr(out, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824") != NULL &&
+               strstr(out, "3610a686") != NULL &&
+               strstr(out, "otto shell") != NULL &&
+               strstr(out, "6f74746f") != NULL &&
+               strstr(out, "a%20b%26c") != NULL &&
+               strstr(out, "-4") != NULL &&
+               strstr(out, "otto_pkg") != NULL &&
+               strstr(out, "true") != NULL &&
+               strstr(out, "auth_err") != NULL);
+    if (!ok) snprintf(err, err_sz, "crypto/encoding/toml/jsonl failed: got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 32: `disk` Usage, `ports` Scanner, Auto `.env` Loader & `Ottofile` Task Runner
+static bool test_disk_ports_dotenv_ottofile(char *err, size_t err_sz) {
+    mkdir_p("test_env_dir");
+    write_file("test_env_dir/.env", "OTTO_DOTENV_KEY=\"magic_dotenv_42\"\n");
+
+    write_file("test_a6.otto",
+        "disk, print.\n"
+        "disk \"src\", print first's path.\n"
+        "read ports, print.\n"
+        "cd \"test_env_dir\". print $OTTO_DOTENV_KEY.\n");
+
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s test_a6.otto", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    remove_file("test_a6.otto");
+    remove_file("test_env_dir/.env");
+#ifdef _WIN32
+    _rmdir("test_env_dir");
+#else
+    rmdir("test_env_dir");
+#endif
+
+    if (strstr(out1, "magic_dotenv_42") == NULL || strstr(out1, "src/") == NULL) {
+        snprintf(err, err_sz, "disk/ports/.env failed: got '%s'", out1);
+        free(out1);
+        return false;
+    }
+    free(out1);
+
+    // Ottofile task runner (`--tasks` and `task <name> <arg>`)
+    write_file("test_tasks.otto",
+        "# Greet a target developer\n"
+        "greet who:\n"
+        "    print \"hi_task_\" + who.\n");
+
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s -f test_tasks.otto --tasks", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+    if (strstr(out2, "greet") == NULL || strstr(out2, "Greet a target developer") == NULL) {
+        remove_file("test_tasks.otto");
+        snprintf(err, err_sz, "otto --tasks failed: got '%s'", out2);
+        free(out2);
+        return false;
+    }
+    free(out2);
+
+    char cmd3[512];
+    snprintf(cmd3, sizeof(cmd3), "%s -f test_tasks.otto task greet World", g_bin);
+    char *out3 = run_cmd(cmd3, NULL);
+    remove_file("test_tasks.otto");
+    bool ok = (strstr(out3, "hi_task_World") != NULL);
+    if (!ok) snprintf(err, err_sz, "otto task greet failed: got '%s'", out3);
+    free(out3);
+    return ok;
+}
+
+// Test 33: Live `abbr`, Deduplicated `$PATH` `prepend`/`append`, Persistent History & Stderr Separation
+static bool test_abbr_path_history_stderr(char *err, size_t err_sz) {
+    // 33.1 `abbr`, list `prepend`/`append`, deduplicated `$PATH`, and clean stdout capture vs child stderr
+#ifdef _WIN32
+    const char *stderr_subcmd = "cmd /c \"echo clean_out&& echo warn_noise 1>&2\"";
+#else
+    const char *stderr_subcmd = "sh -c 'echo clean_out; echo warn_noise >&2'";
+#endif
+    (void)stderr_subcmd;
+    write_file("test_b_all.otto",
+        "abbr \"say777\" \"echo abbr_777_ok\".\n"
+        "say777, print.\n"
+        "[2, 3], prepend 1, append 4, join \"-\", print.\n"
+        "prepend \"otto_custom_bin_dir\" into $PATH.\n"
+        "prepend \"otto_custom_bin_dir\" into $PATH.\n"
+        "print $PATH.\n");
+
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s test_b_all.otto", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    remove_file("test_b_all.otto");
+
+    const char *first_occ = strstr(out1, "otto_custom_bin_dir");
+    const char *second_occ = first_occ ? strstr(first_occ + 19, "otto_custom_bin_dir") : NULL;
+    if (strstr(out1, "abbr_777_ok") == NULL || strstr(out1, "1-2-3-4") == NULL ||
+        first_occ == NULL || second_occ != NULL) {
+        snprintf(err, err_sz, "abbr/prepend/dedup PATH failed: got '%s'", out1);
+        free(out1);
+        return false;
+    }
+    free(out1);
+
+    // 33.2 Verify child stderr does not pollute captured stdout pipeline value
+#ifdef _WIN32
+    write_file("test_stderr.otto", "run \"cmd /c echo clean_out && echo warn_noise 1>&2\" into cap. print \"[\" + cap + \"]\".\n");
+#else
+    write_file("test_stderr.otto", "run \"echo clean_out; echo warn_noise >&2\" into cap. print \"[\" + cap + \"]\".\n");
+#endif
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s test_stderr.otto", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+    remove_file("test_stderr.otto");
+    if (strstr(out2, "[clean_out") == NULL || strstr(out2, "warn_noise]") != NULL) {
+        snprintf(err, err_sz, "stderr polluted captured stdout: got '%s'", out2);
+        free(out2);
+        return false;
+    }
+    free(out2);
+
+    // 33.3 Persistent REPL command history via OTTO_HISTORY_FILE
+    remove_file("test_otto_hist.txt");
+#ifdef _WIN32
+    _putenv_s("OTTO_HISTORY_FILE", "test_otto_hist.txt");
+#else
+    setenv("OTTO_HISTORY_FILE", "test_otto_hist.txt", 1);
+#endif
+    write_file("test_repl_in.txt", "abbr \"hi9\" \"print 999\"\nhi9\nexit\n");
+    char cmd3[512];
+    snprintf(cmd3, sizeof(cmd3), "%s < test_repl_in.txt", g_bin);
+    char *out3 = run_cmd(cmd3, NULL);
+    remove_file("test_repl_in.txt");
+#ifdef _WIN32
+    _putenv_s("OTTO_HISTORY_FILE", "");
+#else
+    unsetenv("OTTO_HISTORY_FILE");
+#endif
+
+    char *hist_c = read_file("test_otto_hist.txt");
+    remove_file("test_otto_hist.txt");
+    bool ok = (strstr(out3, "999") != NULL && hist_c != NULL && strstr(hist_c, "print 999") != NULL);
+    if (!ok) snprintf(err, err_sz, "Persistent REPL history/abbr failed: out='%s', hist='%s'", out3, hist_c ? hist_c : "(null)");
+    if (hist_c) free(hist_c);
+    free(out3);
+    return ok;
+}
+
+// Test 34: Built-in `help`/`examples`, Caret Diagnostics, Levenshtein/Rosetta Hints & `otto tutor`
+static bool test_help_diagnostics_tutor(char *err, size_t err_sz) {
+    // 34.1 Built-in `help` & `examples`
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s -c \"help search. examples git.\"", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    if (strstr(out1, "search") == NULL || strstr(out1, "commits") == NULL) {
+        snprintf(err, err_sz, "help/examples failed: got '%s'", out1);
+        free(out1);
+        return false;
+    }
+    free(out1);
+
+    // 34.2 Visual caret `^` + `into` hint on `=` syntax error
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s -c \"42 = x.\" 2>&1", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+    if (strstr(out2, "^") == NULL || strstr(out2, "into") == NULL) {
+        snprintf(err, err_sz, "Visual caret diagnostic failed: got '%s'", out2);
+        free(out2);
+        return false;
+    }
+    free(out2);
+
+    // 34.3 Levenshtein suggestion on `prnit` & Rosetta tip on `ll`
+    write_file("test_typos.otto", "prnit \"hi\".\nll.\n");
+    char cmd3[512];
+    snprintf(cmd3, sizeof(cmd3), "%s test_typos.otto 2>&1", g_bin);
+    char *out3 = run_cmd(cmd3, NULL);
+    remove_file("test_typos.otto");
+    if (strstr(out3, "Did you mean") == NULL || strstr(out3, "print") == NULL || strstr(out3, "In otto, try:") == NULL) {
+        snprintf(err, err_sz, "Levenshtein/Rosetta hints failed: got '%s'", out3);
+        free(out3);
+        return false;
+    }
+    free(out3);
+
+    // 34.4 Interactive 5-Lesson `otto tutor` walkthrough
+    char cmd4[512];
+    snprintf(cmd4, sizeof(cmd4), "%s tutor", g_bin);
+    char *out4 = run_cmd(cmd4, NULL);
+    bool ok = (strstr(out4, "Lesson 1") != NULL && strstr(out4, "Lesson 5") != NULL && strstr(out4, "720") != NULL);
+    if (!ok) snprintf(err, err_sz, "otto tutor failed: got '%s'", out4);
+    free(out4);
+    return ok;
+}
+
 // ---------------------------------------------------------
 // Main Entry Point
 // ---------------------------------------------------------
@@ -980,7 +1283,7 @@ int main(int argc, char **argv) {
     }
 
     printf("\033[1;36m==========================================================\033[0m\n");
-    printf("\033[1;36mOTTO UNIFIED PORTABLE C TEST RUNNER (ALL 28 TESTS)\033[0m\n");
+    printf("\033[1;36mOTTO UNIFIED PORTABLE C TEST RUNNER (ALL 34 TESTS)\033[0m\n");
     printf("\033[1;36mTarget Binary: %s\033[0m\n", g_bin);
     printf("\033[1;36m==========================================================\033[0m\n");
 
@@ -1019,6 +1322,14 @@ int main(int argc, char **argv) {
     run_test("Audited Core Expressions, Lists, Drop/Join, Where & Sort Adverbs", test_audited_core_collections);
     run_test("Generalized Unpack, CSV Scanner, Extractors & Universal 'into'", test_unpack_csv_extractors);
     run_test("File Ops (copy/move/remove + undo), Recursive Glob, FFI, Hooks & History", test_fileops_ffi_hooks_history);
+
+    // Pillars A, B, C: Modern Dev CLI, Fish-Class Interactive Shell & Beginner Onboarding (29-34)
+    run_test("Multi-File Code Search (search + .gitignore) & Rich stat + Unit Literals", test_search_stat_units);
+    run_test("Syntax-Highlighted Viewer (view) & Native Git Scanners (status/commits/branches)", test_view_and_git_scanners);
+    run_test("Crypto/Encoding (hash, encode/decode, uuid) & TOML / JSONL Scanners", test_crypto_encoding_toml_jsonl);
+    run_test("Disk Usage, Ports Scanner, Auto .env Loader & Ottofile Task Runner", test_disk_ports_dotenv_ottofile);
+    run_test("Live abbr, Deduplicated $PATH prepend/append, Persistent History & Stderr Separation", test_abbr_path_history_stderr);
+    run_test("Built-in help/examples, Caret Diagnostics, Levenshtein/Rosetta Hints & otto tutor", test_help_diagnostics_tutor);
 
     printf("\n\033[1;36m==========================================================\033[0m\n");
     if (g_passed == g_total) {

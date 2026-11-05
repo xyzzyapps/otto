@@ -90,6 +90,20 @@ typedef enum {
     OP_VERB_JOBS,
     OP_VERB_RESUME,
     OP_VERB_REPEAT,
+    OP_VERB_SEARCH,
+    OP_VERB_STAT,
+    OP_VERB_VIEW,
+    OP_VERB_HASH,
+    OP_VERB_ENCODE,
+    OP_VERB_DECODE,
+    OP_VERB_UUID,
+    OP_VERB_DISK,
+    OP_VERB_ABBR,
+    OP_VERB_PREPEND,
+    OP_VERB_APPEND,
+    OP_VERB_HELP,
+    OP_VERB_EXAMPLES,
+    OP_VERB_TUTOR,
 
     // Loop header / stream step / timers
     OP_STREAM_START,  // starts stream

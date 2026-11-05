@@ -2,6 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
+#ifdef _WIN32
+#define strncasecmp _strnicmp
+#else
+#include <strings.h>
+#endif
 
 static void parser_error(Parser *p, const char *msg) {
     if (p->has_error) return;
@@ -80,6 +86,48 @@ static uint16_t parse_adverbs(Parser *p) {
     return advs;
 }
 
+static Value eval_unit_literal(Slice s) {
+    if (s.len > 1 && s.ptr[0] == ':') {
+        bool ok = false;
+        int64_t port = slice_to_i64((Slice){s.ptr + 1, s.len - 1}, &ok);
+        if (ok) return val_int(port);
+    }
+    size_t i = 0;
+    bool is_flt = false;
+    if (i < s.len && s.ptr[i] == '-') i++;
+    while (i < s.len && isdigit((unsigned char)s.ptr[i])) i++;
+    if (i < s.len && s.ptr[i] == '.') {
+        is_flt = true;
+        i++;
+        while (i < s.len && isdigit((unsigned char)s.ptr[i])) i++;
+    }
+    if (i == 0 || i >= s.len) return val_slice(s.ptr, s.len);
+
+    bool ok = false;
+    double num = is_flt ? slice_to_f64((Slice){s.ptr, i}, &ok) : (double)slice_to_i64((Slice){s.ptr, i}, &ok);
+    if (!ok) return val_slice(s.ptr, s.len);
+
+    Slice u = {s.ptr + i, s.len - i};
+    int64_t mult = 0;
+    if (u.len == 1 && strncasecmp(u.ptr, "b", 1) == 0) mult = 1LL;
+    else if ((u.len == 2 && strncasecmp(u.ptr, "kb", 2) == 0) || (u.len == 1 && strncasecmp(u.ptr, "k", 1) == 0)) mult = 1024LL;
+    else if (u.len == 2 && strncasecmp(u.ptr, "mb", 2) == 0) mult = 1024LL * 1024LL;
+    else if (u.len == 2 && strncasecmp(u.ptr, "gb", 2) == 0) mult = 1024LL * 1024LL * 1024LL;
+    else if (u.len == 2 && strncasecmp(u.ptr, "tb", 2) == 0) mult = 1024LL * 1024LL * 1024LL * 1024LL;
+    else if (u.len == 2 && strncasecmp(u.ptr, "ms", 2) == 0) return val_float(num / 1000.0);
+    else if ((u.len == 1 && strncasecmp(u.ptr, "s", 1) == 0) || (u.len == 3 && strncasecmp(u.ptr, "sec", 3) == 0)) mult = 1LL;
+    else if ((u.len == 1 && strncasecmp(u.ptr, "m", 1) == 0) || (u.len == 3 && strncasecmp(u.ptr, "min", 3) == 0)) mult = 60LL;
+    else if ((u.len == 1 && strncasecmp(u.ptr, "h", 1) == 0) || (u.len == 2 && strncasecmp(u.ptr, "hr", 2) == 0)) mult = 3600LL;
+    else if ((u.len == 1 && strncasecmp(u.ptr, "d", 1) == 0) || (u.len == 3 && strncasecmp(u.ptr, "day", 3) == 0) ||
+             (u.len == 4 && strncasecmp(u.ptr, "days", 4) == 0)) mult = 86400LL;
+    else if (u.len == 1 && strncasecmp(u.ptr, "w", 1) == 0) mult = 604800LL;
+
+    if (mult > 0) {
+        return is_flt ? val_float(num * (double)mult) : val_int((int64_t)num * mult);
+    }
+    return val_slice(s.ptr, s.len);
+}
+
 // Parse primary expression
 static ASTNode *parse_primary(Parser *p) {
     int line = p->current.line;
@@ -111,7 +159,6 @@ static ASTNode *parse_primary(Parser *p) {
         return node;
     }
 
-    // Literals
     if (match(p, TOK_NUMBER)) {
         ASTNode *node = ast_create(p->arena, AST_EXPR_LITERAL, line, col);
         bool has_dot = (memchr(p->previous.lexeme.ptr, '.', p->previous.lexeme.len) != NULL);
@@ -125,7 +172,7 @@ static ASTNode *parse_primary(Parser *p) {
     }
     if (match(p, TOK_UNIT_LIT)) {
         ASTNode *node = ast_create(p->arena, AST_EXPR_LITERAL, line, col);
-        node->as.lit.val = val_slice(p->previous.lexeme.ptr, p->previous.lexeme.len);
+        node->as.lit.val = eval_unit_literal(p->previous.lexeme);
         return node;
     }
     if (match(p, TOK_BOOL)) {
@@ -215,8 +262,8 @@ static ASTNode *parse_primary(Parser *p) {
             }
         }
 
-        if (arity > 0) {
-            ASTNode **args = (ASTNode **)arena_alloc(p->arena, arity * sizeof(ASTNode *));
+        if (arity >= 0) {
+            ASTNode **args = (arity > 0) ? (ASTNode **)arena_alloc(p->arena, (size_t)arity * sizeof(ASTNode *)) : NULL;
             for (int i = 0; i < arity; i++) {
                 args[i] = parse_postfix(p);
             }
@@ -232,6 +279,14 @@ static ASTNode *parse_primary(Parser *p) {
         return node;
     }
 
+    // Allow scanner nouns (port, status, file, line, row, etc.) as variable/property identifiers in expressions
+    if (token_is_scanner(p->current.type)) {
+        Token stok = advance(p);
+        ASTNode *node = ast_create(p->arena, AST_EXPR_VAR, line, col);
+        node->as.var.name = stok.lexeme;
+        return node;
+    }
+
     parser_error(p, "Unexpected token in expression");
     return NULL;
 }
@@ -244,7 +299,7 @@ static ASTNode *parse_postfix(Parser *p) {
     while (match(p, TOK_GENITIVE)) {
         Token prop_tok = advance(p);
         if (prop_tok.type != TOK_IDENT && !token_is_ordinal(prop_tok.type) &&
-            !token_is_scanner(prop_tok.type)) {
+            !token_is_scanner(prop_tok.type) && !token_is_verb(prop_tok.type)) {
             parser_error(p, "Expected property name after 's");
             return expr;
         }
@@ -328,6 +383,13 @@ static ASTNode *parse_return_stmt(Parser *p) {
     return node;
 }
 
+static bool is_defined_func(Parser *p, Slice name) {
+    for (size_t i = 0; i < p->func_count; i++) {
+        if (slice_eq(p->funcs[i].name, name)) return true;
+    }
+    return false;
+}
+
 // Parse command clause: Adverb* Verb DirectArg? PrepSlot* Condition?
 static ASTNode *parse_command(Parser *p) {
     int line = p->current.line;
@@ -335,10 +397,11 @@ static ASTNode *parse_command(Parser *p) {
 
     uint16_t adverbs = parse_adverbs(p);
 
-    // If starting with an expression (e.g. `0 into s.`, `"a,b", split ","`, `[1, 2], chart.`, `that + 1 into x.`)
-    if (check(p, TOK_NUMBER) || check(p, TOK_STRING) || check(p, TOK_BOOL) ||
+    // If starting with an expression or a user-defined function call
+    if (check(p, TOK_NUMBER) || check(p, TOK_UNIT_LIT) || check(p, TOK_STRING) || check(p, TOK_BOOL) ||
         check(p, TOK_NIL) || check(p, TOK_LBRACE) || check(p, TOK_LBRACKET) ||
-        check(p, TOK_LPAREN) || (p->current.type >= TOK_REG_IT && p->current.type <= TOK_REG_PREVIOUS)) {
+        check(p, TOK_LPAREN) || (p->current.type >= TOK_REG_IT && p->current.type <= TOK_REG_PREVIOUS) ||
+        (check(p, TOK_IDENT) && is_defined_func(p, p->current.lexeme))) {
         ASTNode *lit_expr = parse_expr(p);
         ASTNode *node = ast_create(p->arena, AST_CLAUSE_CMD, line, col);
         node->as.cmd.verb = TOK_EOF; // pure expression / binding clause
@@ -373,29 +436,16 @@ static ASTNode *parse_command(Parser *p) {
         verb = vtok.type;
     } else if (check(p, TOK_IDENT)) {
         Token vtok = advance(p);
-        bool is_func = false;
-        for (size_t f = 0; f < p->func_count; f++) {
-            if (slice_eq(p->funcs[f].name, vtok.lexeme)) {
-                is_func = true;
-                break;
-            }
-        }
+        verb = TOK_VERB_RUN;
+        const char *cmd_start = vtok.lexeme.ptr;
+        const char *cmd_end = vtok.lexeme.ptr + vtok.lexeme.len;
 
-        if (is_func) {
-            verb = TOK_VERB_RUN;
-            raw_cmd = vtok.lexeme;
-        } else {
-            verb = TOK_VERB_RUN;
-            const char *cmd_start = vtok.lexeme.ptr;
-            const char *cmd_end = vtok.lexeme.ptr + vtok.lexeme.len;
-
-            while (!check(p, TOK_COMMA) && !check(p, TOK_AND) && !check(p, TOK_OR) &&
-                   !check(p, TOK_DOT) && !check(p, TOK_AMP) && !check(p, TOK_EOF)) {
-                Token arg_tok = advance(p);
-                cmd_end = arg_tok.lexeme.ptr + arg_tok.lexeme.len;
-            }
-            raw_cmd = (Slice){cmd_start, (size_t)(cmd_end - cmd_start)};
+        while (!check(p, TOK_COMMA) && !check(p, TOK_AND) && !check(p, TOK_OR) &&
+               !check(p, TOK_DOT) && !check(p, TOK_AMP) && !check(p, TOK_EOF)) {
+            Token arg_tok = advance(p);
+            cmd_end = arg_tok.lexeme.ptr + arg_tok.lexeme.len;
         }
+        raw_cmd = (Slice){cmd_start, (size_t)(cmd_end - cmd_start)};
     } else {
         parser_error(p, "Expected verb or command");
         return NULL;
@@ -405,6 +455,26 @@ static ASTNode *parse_command(Parser *p) {
     node->as.cmd.verb = verb;
     node->as.cmd.raw_cmd = raw_cmd;
     node->as.cmd.adverbs = adverbs;
+    if (token_is_adverb(p->current.type)) {
+        node->as.cmd.adverbs |= parse_adverbs(p);
+    }
+
+    if (verb == TOK_VERB_HELP || verb == TOK_VERB_EXAMPLES) {
+        if (!check(p, TOK_COMMA) && !check(p, TOK_AND) && !check(p, TOK_OR) &&
+            !check(p, TOK_DOT) && !check(p, TOK_EOF)) {
+            Token ttok = advance(p);
+            ASTNode *lit = ast_create(p->arena, AST_EXPR_LITERAL, ttok.line, ttok.col);
+            lit->as.lit.val = val_slice(ttok.lexeme.ptr, ttok.lexeme.len);
+            node->as.cmd.direct_arg = lit;
+        }
+        return node;
+    }
+
+    // Optional `git` prefix before git scanners (e.g. `read git status`, `read git commits`)
+    if (verb == TOK_VERB_READ && check(p, TOK_IDENT) && slice_eq_str(p->current.lexeme, "git") &&
+        token_is_scanner(lexer_peek(&p->lexer).type)) {
+        advance(p);
+    }
 
     if (verb == TOK_VERB_BENCHMARK) {
         if (check(p, TOK_NUMBER)) {
@@ -557,6 +627,10 @@ static ASTNode *parse_command(Parser *p) {
         else if (verb == TOK_VERB_EXCLUDE) implicit_prep = TOK_PREP_FROM;
         else if (verb == TOK_VERB_ADD) implicit_prep = TOK_PREP_INTO;
         else if (verb == TOK_VERB_COPY || verb == TOK_VERB_MOVE) implicit_prep = TOK_PREP_INTO;
+        else if (verb == TOK_VERB_PREPEND || verb == TOK_VERB_APPEND) implicit_prep = TOK_PREP_INTO;
+        else if (verb == TOK_VERB_SEARCH) implicit_prep = TOK_PREP_IN;
+        else if (verb == TOK_VERB_ABBR) implicit_prep = TOK_PREP_WITH;
+        else if (verb == TOK_VERB_HASH || verb == TOK_VERB_ENCODE || verb == TOK_VERB_DECODE) implicit_prep = TOK_PREP_WITH;
 
         if (implicit_prep != 0) {
             ASTNode *second_arg = parse_expr(p);
@@ -710,6 +784,10 @@ static ASTNode *parse_block_or_pipe(Parser *p) {
         }
 
         uint16_t advs = parse_adverbs(p);
+        if (check(p, TOK_IDENT) && slice_eq_str(p->current.lexeme, "git") &&
+            token_is_scanner(lexer_peek(&p->lexer).type)) {
+            advance(p);
+        }
         OttoTokenType scanner = 0;
         if (token_is_scanner(p->current.type)) {
             Token stok = advance(p);

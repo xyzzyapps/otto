@@ -189,6 +189,15 @@ Value tui_pick(Value items, Arena *arena) {
 
 void tui_table(Value items, FILE *out) {
     if (!out) out = stdout;
+    if (items.type == VAL_MAP) {
+        Arena single_arena;
+        arena_init(&single_arena, 4096);
+        Value wrap = val_list_create(&single_arena, 1);
+        val_list_append(&wrap, items, &single_arena);
+        tui_table(wrap, out);
+        arena_free(&single_arena);
+        return;
+    }
     if (items.type != VAL_LIST || val_list_len(items) == 0) {
         val_println(items, out);
         return;

@@ -32,6 +32,11 @@ This tutorial covers every feature of `otto` from basic pipeline ergonomics to a
 18. [Real-World Production Recipes](#18-real-world-production-recipes)
 19. [The 7 Modern CLI Capabilities](#19-the-7-modern-cli-capabilities)
 20. [Process & Job Control (`background`, `jobs`, `resume`, `kill`)](#20-process--job-control-background-jobs-resume-kill)
+21. [Developer CLI Replacements (`search`, `stat`, `view` & Unit Literals)](#21-developer-cli-replacements-search-stat-view--unit-literals)
+22. [Native Structured Git Integration (`status`, `commits`, `branches`, `diff`)](#22-native-structured-git-integration-status-commits-branches-diff)
+23. [Crypto, Encoding, UUIDs, TOML & JSONL Streams](#23-crypto-encoding-uuids-toml--jsonl-streams)
+24. [System Inspection, `.env` Auto-Loading & `Ottofile` Task Runner](#24-system-inspection-env-auto-loading--ottofile-task-runner)
+25. [Fish-Class Interactive Shell & Beginner Onboarding (`abbr`, `Ctrl+R`, `help`, `tutor`)](#25-fish-class-interactive-shell--beginner-onboarding-abbr-ctrlr-help-tutor)
 
 ---
 
@@ -63,14 +68,14 @@ Every valid token in `otto` belongs to one of eight grammatical classes:
 
 | Class | Description | Examples |
 |---|---|---|
-| **Hooks** | Lifecycle triggers & definitions | `before:`, `every:`, `after:`, `on:`, `extern:` |
-| **Verbs** | Actions performed on streams or values | `read`, `write`, `print`, `take`, `drop`, `sort`, `replace`, `add`, `count`, `run`, `compile`, `undo`, `pick`, `table`, `chart`, `unpack` |
-| **Scanners** | Tokenizers for unstructured or structured streams | `line`, `lines`, `word`, `words`, `number`, `numbers`, `byte`, `bytes`, `file`, `files`, `process`, `processes`, `row`, `rows`, `json`, `yaml`, `host`, `hosts` |
+| **Hooks** | Lifecycle triggers & definitions | `before:`, `every:`, `after:`, `on:`, `watch:`, `extern:` |
+| **Verbs** | Actions performed on streams or values | `read`, `write`, `print`, `take`, `drop`, `sort`, `replace`, `add`, `count`, `run`, `compile`, `undo`, `pick`, `table`, `chart`, `unpack`, `search`, `stat`, `view`, `hash`, `encode`, `decode`, `uuid`, `disk`, `abbr`, `prepend`, `append`, `help`, `examples`, `tutor` |
+| **Scanners** | Tokenizers for unstructured or structured streams | `line`, `lines`, `word`, `words`, `number`, `numbers`, `byte`, `bytes`, `file`, `files`, `process`, `processes`, `row`, `rows`, `json`, `jsonl`, `csv`, `yaml`, `toml`, `tree`, `port`, `ports`, `status`, `commits`, `branches`, `diff`, `host`, `hosts` |
 | **Ordinals** | Positional indexers & field selectors | `first` (`1st`), `second` (`2nd`), `third` (`3rd`), `fourth` (`4th`), `last`, `nth`, `top`, `each` |
-| **Adverbs** | Modifiers specifying verb execution semantics | `recursively`, `numerically`, `descending`, `uniquely`, `inplace`, `concurrently`, `casefold`, `simulate`, `parallel`, `background` |
-| **Prepositions** | Target slots for inputs, outputs, and parameters | `into`, `onto`, `from`, `with`, `by`, `where`, `matching`, `at`, `discard`, `replacing` |
+| **Adverbs** | Modifiers specifying verb execution semantics | `recursively`, `numerically`, `descending`, `uniquely`, `inplace`, `concurrently`, `casefold`, `simulate`, `parallel`, `background`, `ignoring git` |
+| **Prepositions** | Target slots for inputs, outputs, and parameters | `into`, `onto`, `from`, `with`, `by`, `where`, `matching`, `at`, `in`, `discard`, `replacing` |
 | **Conjunctions** | Stream routing and pipeline logic | `,` (pipe), `and` (parallel tee), `or` (fallback/error recovery) |
-| **Registers** | Fast hardware and execution state tokens | `acc` (accumulator), `cur` (`item`), `fld` (fields), `error`, `previous` |
+| **Registers** | Fast hardware and execution state tokens | `it` (`acc`), `each` (`cur`/`item`), `them` (`fld`), `that`, `error`, `previous` |
 
 ---
 
@@ -104,6 +109,10 @@ Every valid token in `otto` belongs to one of eight grammatical classes:
 | **Set Difference** | `exclude "tests"` | `exclude from "tests"` |
 | **Binary Compilation** | `compile "tool.otto" "./tool"` | `compile "tool.otto" into "./tool"` |
 | **File Copy / Move** | `copy "a" "b"` / `move "a" "b"` | `copy "a" into "b"` / `move "a" into "b"` |
+| **Code Search** | `search "TODO" "src"` | `search "TODO" in "src"` |
+| **Live Abbreviations** | `abbr "gs" "read status, table"` | `abbr "gs" with "read status, table"` |
+| **PATH / List Mutation** | `prepend "~/.local/bin" $PATH` | `prepend "~/.local/bin" into $PATH` |
+| **Hashing & Encoding** | `hash sha256` / `encode base64` | `hash with "sha256"` / `encode with "base64"` |
 
 ### Pronoun Pipelining Across Sentences
 Sentences in `otto` can chain results effortlessly using `that` and `them`:
@@ -615,4 +624,182 @@ kill 17402.
 # Interactive fuzzy search and termination
 every process: pick, kill.
 ```
+
+---
+
+## 21. Developer CLI Replacements (`search`, `stat`, `view` & Unit Literals)
+
+`otto` replaces `ripgrep` (`rg`), `fd`, `eza`, and `bat` natively with structured map streams — no text scraping required.
+
+### 21.1 Multi-File `.gitignore`-Aware Code Search (`search`)
+Searches directories recursively while automatically respecting `.gitignore` rules and skipping `.git`, `node_modules`, `dist`, and binary files. Returns a list of `{file, line, col, text}` maps:
+
+```powershell
+# Case-insensitive search across src/ rendered as a box table
+search casefold "TODO" in "src", table.
+
+# Zero-preposition shorthand + interactive fuzzy picker
+search "parse_command" "src", pick, print each's file.
+```
+
+### 21.2 Rich File Metadata & Unit Literals (`stat`, `kb`/`mb`/`gb`, `ms`/`s`/`d`, `:port`)
+The `stat` verb returns structured `{path, name, ext, size, age, modified, dir}` metadata maps. In addition, file-path slices inside `every file` loops lazily expose `.size`, `.ext`, `.age`, `.modified`, `.name`, and `.dir` via `'s` genitives, and first-class unit literals (`10kb`, `5mb`, `2gb`, `500ms`, `30d`, `:8080`) evaluate directly in expressions:
+
+```powershell
+# List largest files in src/
+stat recursively "src/*", sort size descending, take 10, table.
+
+# Filter files larger than 10 KB modified within the last 7 days
+every recursively file "src/*" where each's size > 10kb: print each's name.
+```
+
+### 21.3 Syntax-Highlighted File Viewer & Pager (`view`)
+Replaces `bat` and `less` with automatic syntax coloring (C, JS/TS, Python, Rust, Go, JSON, YAML, TOML, Markdown, Otto), line numbers, header borders, and an interactive pager (`SPACE` / `j` / `k` / `q`) when attached to a terminal:
+
+```powershell
+view "src/vm.c".
+```
+
+---
+
+## 22. Native Structured Git Integration (`status`, `commits`, `branches`, `diff`)
+
+Instead of parsing fragile `git` text output with `awk` or `cut`, `otto` provides native git scanners (with optional `git` prefix for readability):
+
+```powershell
+# Working-tree status as {state, file} maps
+read status, table.
+every git status where each's state == "M": print each's file.
+
+# Commit history as {hash, author, date, message} maps
+read git commits, take 10, table.
+
+# Branches as {name, current} maps
+read git branches, table.
+
+# Syntax-colored delta-style unified diff
+read diff, print.
+read "src/vm.c" diff, print.
+```
+
+---
+
+## 23. Crypto, Encoding, UUIDs, TOML & JSONL Streams
+
+### 23.1 Hashing, Encoding & UUID v4 (`hash`, `encode`, `decode`, `uuid`)
+Replaces `sha256sum`, `cksum`, `base64`, `xxd`, `python -c "import urllib.parse..."`, and `uuidgen`:
+
+```powershell
+# FIPS 180-4 SHA-256 and IEEE CRC32 (works on strings or files)
+"hello world", hash sha256, print.
+"hello world", hash crc32, print.
+
+# Base64, Hex, and RFC 3986 URL encoding/decoding
+"otto shell", encode base64, decode base64, print.
+"otto", encode hex, print.
+"query with spaces & symbols", encode url, print.
+
+# Cryptographically random RFC 4122 UUID v4
+uuid, print.
+```
+
+### 23.2 Native TOML & Streaming JSONL (`toml` & `jsonl`)
+Parse `Cargo.toml` / `pyproject.toml` configurations and stream multi-gigabyte `.jsonl` / NDJSON logs line-by-line in constant $O(1)$ iteration arena memory:
+
+```powershell
+# Parse TOML tables and nested [section.subsection] keys
+read "Cargo.toml" toml into cfg.
+print cfg's package's name.
+
+# Stream JSON Lines with constant memory footprint
+every jsonl "events.jsonl" where each's code >= 500: print each's service.
+```
+
+---
+
+## 24. System Inspection, `.env` Auto-Loading & `Ottofile` Task Runner
+
+### 24.1 Network Port Scanner (`ports`) & Disk Usage (`disk`)
+Replaces `lsof -i`, `ss -tulnp`, `netstat`, `duf`, and `dust`:
+
+```powershell
+# Inspect active TCP/UDP sockets as {proto, local, port, state, pid} maps
+read ports, table.
+every port where port == :8080: kill.
+
+# Mounted filesystem capacity summary (duf replacement)
+disk, table.
+
+# Directory size breakdown sorted largest-first (dust replacement)
+disk "src", table.
+```
+
+### 24.2 Automatic `.env` Directory Environment Loader (`direnv` Replacement)
+Whenever `otto` starts or changes directories (`cd`, `jump`, `back`), it automatically checks for a `.env` file in the target directory and loads `KEY=VALUE` / `export KEY="VALUE"` pairs into process `$ENV` variables without external shell hooks.
+
+### 24.3 Native `Ottofile` / `tasks.otto` Project Task Runner (`just` / `make` Replacement)
+Define zero-filler functions with `#` docstrings in an `Ottofile` (or `tasks.otto`):
+
+```powershell
+# Build release binary
+build mode:
+    print "Building in " + mode + " mode...".
+    run "zig build -Doptimize=ReleaseFast".
+
+# Run full portable test suite
+test:
+    run "./test_runner".
+```
+
+List and run tasks directly from the CLI:
+```bash
+otto --tasks              # Lists tasks, parameters, and # docstrings
+otto task build release   # Invokes `build "release".`
+otto -f custom.otto tasks # Use a custom task file
+```
+
+---
+
+## 25. Fish-Class Interactive Shell & Beginner Onboarding (`abbr`, `Ctrl+R`, `help`, `tutor`)
+
+### 25.1 Interactive REPL Keyboard Shortcuts
+| Shortcut | Action |
+|:---|:---|
+| **`Tab`** | Context-aware completion menu (cycling through verbs, variables, `abbr`, `$ENV`, `git` subcommands, and file paths) |
+| **`Right Arrow` / `End` / `Ctrl+E`** | Accept inline gray ghost history autosuggestion |
+| **`Up` / `Down`** | Prefix-filtered persistent history navigation (`~/.otto/history`) |
+| **`Ctrl+R`** | Full-screen interactive fuzzy history search (powered by `pick`) |
+| **`Ctrl+Left` / `Ctrl+Right`** | Jump cursor backward / forward by word |
+| **`Home` / `Ctrl+A`** | Move cursor to start of line |
+| **`Ctrl+W` / `Ctrl+U` / `Ctrl+K`** | Delete previous word / kill to start / kill to end of line |
+| **`Ctrl+L`** | Clear terminal screen and redraw Starship prompt |
+
+### 25.2 Live Fish-Style Abbreviations (`abbr`) & Deduplicated `$PATH` (`prepend` / `append`)
+Unlike opaque `alias` wrappers, `abbr` expands visibly in the prompt when you press `Space` or `Enter` so command history stays readable and self-documenting (save favorites in `~/.ottorc`):
+
+```powershell
+abbr "gs" "read status, table".
+abbr "gl" "read commits, take 10, table".
+
+# List all registered abbreviations
+abbr, table.
+
+# Clean, deduplicated $PATH management
+prepend "~/.local/bin" into $PATH.
+append "/opt/tools/bin" into $PATH.
+```
+
+### 25.3 Built-In Cheat Sheets, Visual Diagnostics & Interactive Tutor
+`otto` is designed so beginners never get stuck:
+- **Offline Cheat Sheets (`help` & `examples`):**
+  ```powershell
+  help.              # Browse all categorized topics
+  help search.       # Syntax + explanation + examples for `search`
+  examples git.      # Copy-pasteable git one-liners
+  ```
+- **Visual Caret Diagnostics, Typo Suggestions & Rosetta Hints:**
+  Mistyped verbs (`prnit "hi"`) suggest the closest keyword (`Did you mean 'print'?`), `=` vs `into` errors underline the exact column with `^~~~`, and muscle-memory Unix commands (`ll`, `grep`, `cat`, `lsof`) display idiomatic `otto` equivalents.
+- **5-Lesson Interactive Walkthrough (`otto tutor`):**
+  Run `otto tutor` from your terminal (or `tutor.` inside the REPL) for a hands-on 5-minute guided tour executing live `otto` pipelines step by step.
+
 

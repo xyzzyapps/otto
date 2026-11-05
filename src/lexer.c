@@ -135,6 +135,20 @@ static OttoTokenType classify_word(const char *word, size_t len) {
     if (len == 4 && strncasecmp(word, "jobs", 4) == 0) return TOK_VERB_JOBS;
     if (len == 6 && strncasecmp(word, "resume", 6) == 0) return TOK_VERB_RESUME;
     if (len == 6 && strncasecmp(word, "repeat", 6) == 0) return TOK_VERB_REPEAT;
+    if (len == 6 && strncasecmp(word, "search", 6) == 0) return TOK_VERB_SEARCH;
+    if (len == 4 && strncasecmp(word, "stat", 4) == 0) return TOK_VERB_STAT;
+    if (len == 4 && strncasecmp(word, "view", 4) == 0) return TOK_VERB_VIEW;
+    if (len == 4 && strncasecmp(word, "hash", 4) == 0) return TOK_VERB_HASH;
+    if (len == 6 && strncasecmp(word, "encode", 6) == 0) return TOK_VERB_ENCODE;
+    if (len == 6 && strncasecmp(word, "decode", 6) == 0) return TOK_VERB_DECODE;
+    if (len == 4 && strncasecmp(word, "uuid", 4) == 0) return TOK_VERB_UUID;
+    if (len == 4 && strncasecmp(word, "disk", 4) == 0) return TOK_VERB_DISK;
+    if (len == 4 && strncasecmp(word, "abbr", 4) == 0) return TOK_VERB_ABBR;
+    if (len == 7 && strncasecmp(word, "prepend", 7) == 0) return TOK_VERB_PREPEND;
+    if (len == 6 && strncasecmp(word, "append", 6) == 0) return TOK_VERB_APPEND;
+    if (len == 4 && strncasecmp(word, "help", 4) == 0) return TOK_VERB_HELP;
+    if (len == 8 && strncasecmp(word, "examples", 8) == 0) return TOK_VERB_EXAMPLES;
+    if (len == 5 && strncasecmp(word, "tutor", 5) == 0) return TOK_VERB_TUTOR;
 
     // 3. Scanners
     if (len == 4 && strncasecmp(word, "line", 4) == 0) return TOK_SCAN_LINE;
@@ -154,11 +168,21 @@ static OttoTokenType classify_word(const char *word, size_t len) {
     if (len == 4 && strncasecmp(word, "json", 4) == 0) return TOK_SCAN_JSON;
     if (len == 3 && strncasecmp(word, "csv", 3) == 0) return TOK_SCAN_CSV;
     if (len == 4 && strncasecmp(word, "yaml", 4) == 0) return TOK_SCAN_YAML;
+    if (len == 4 && strncasecmp(word, "toml", 4) == 0) return TOK_SCAN_TOML;
+    if (len == 5 && strncasecmp(word, "jsonl", 5) == 0) return TOK_SCAN_JSONL;
     if (len == 4 && strncasecmp(word, "urls", 4) == 0) return TOK_SCAN_URLS;
     if (len == 6 && strncasecmp(word, "emails", 6) == 0) return TOK_SCAN_EMAILS;
     if (len == 4 && strncasecmp(word, "host", 4) == 0) return TOK_SCAN_HOST;
     if (len == 5 && strncasecmp(word, "hosts", 5) == 0) return TOK_SCAN_HOSTS;
     if (len == 4 && strncasecmp(word, "tree", 4) == 0) return TOK_SCAN_TREE;
+    if (len == 4 && strncasecmp(word, "port", 4) == 0) return TOK_SCAN_PORT;
+    if (len == 5 && strncasecmp(word, "ports", 5) == 0) return TOK_SCAN_PORTS;
+    if (len == 6 && strncasecmp(word, "status", 6) == 0) return TOK_SCAN_STATUS;
+    if ((len == 6 && strncasecmp(word, "commit", 6) == 0) ||
+        (len == 7 && strncasecmp(word, "commits", 7) == 0)) return TOK_SCAN_COMMITS;
+    if ((len == 6 && strncasecmp(word, "branch", 6) == 0) ||
+        (len == 8 && strncasecmp(word, "branches", 8) == 0)) return TOK_SCAN_BRANCHES;
+    if (len == 4 && strncasecmp(word, "diff", 4) == 0) return TOK_SCAN_DIFF;
 
     // 4. Ordinals
     if (len == 5 && strncasecmp(word, "first", 5) == 0) return TOK_ORD_FIRST;
@@ -191,6 +215,7 @@ static OttoTokenType classify_word(const char *word, size_t len) {
     if (len == 5 && strncasecmp(word, "where", 5) == 0) return TOK_PREP_WHERE;
     if (len == 8 && strncasecmp(word, "matching", 8) == 0) return TOK_PREP_MATCHING;
     if (len == 2 && strncasecmp(word, "at", 2) == 0) return TOK_PREP_AT;
+    if (len == 2 && strncasecmp(word, "in", 2) == 0) return TOK_PREP_IN;
     if (len == 7 && strncasecmp(word, "discard", 7) == 0) return TOK_PREP_DISCARD;
     if (len == 9 && strncasecmp(word, "replacing", 9) == 0) return TOK_PREP_REPLACING;
 
@@ -428,6 +453,7 @@ Token lexer_next(Lexer *lex) {
 
     // Identifiers, keywords, registers, filenames
     if (is_ident_start(c)) {
+        next_char(lex); // always consume the leading ident character (e.g. '$', letter, '_', '*')
         while (lex->cursor < lex->length) {
             char ch = peek_char(lex);
             if (ch == '\'' && peek_next_char(lex) == 's') {
@@ -497,11 +523,11 @@ bool token_is_hook(OttoTokenType type) {
 }
 
 bool token_is_verb(OttoTokenType type) {
-    return type >= TOK_VERB_READ && type <= TOK_VERB_REPEAT;
+    return type >= TOK_VERB_READ && type <= TOK_VERB_TUTOR;
 }
 
 bool token_is_scanner(OttoTokenType type) {
-    return type >= TOK_SCAN_LINE && type <= TOK_SCAN_TREE;
+    return type >= TOK_SCAN_LINE && type <= TOK_SCAN_DIFF;
 }
 
 bool token_is_ordinal(OttoTokenType type) {
@@ -553,6 +579,31 @@ const char *token_type_name(OttoTokenType type) {
         case TOK_VERB_COPY: return "copy";
         case TOK_VERB_EXIT: return "exit";
         case TOK_VERB_KILL: return "kill";
+        case TOK_VERB_FILTER: return "filter";
+        case TOK_VERB_TALLY: return "tally";
+        case TOK_VERB_GROUP: return "group";
+        case TOK_VERB_DIRS: return "dirs";
+        case TOK_VERB_BACK: return "back";
+        case TOK_VERB_CD: return "cd";
+        case TOK_VERB_JUMP: return "jump";
+        case TOK_VERB_BENCHMARK: return "benchmark";
+        case TOK_VERB_JOBS: return "jobs";
+        case TOK_VERB_RESUME: return "resume";
+        case TOK_VERB_REPEAT: return "repeat";
+        case TOK_VERB_SEARCH: return "search";
+        case TOK_VERB_STAT: return "stat";
+        case TOK_VERB_VIEW: return "view";
+        case TOK_VERB_HASH: return "hash";
+        case TOK_VERB_ENCODE: return "encode";
+        case TOK_VERB_DECODE: return "decode";
+        case TOK_VERB_UUID: return "uuid";
+        case TOK_VERB_DISK: return "disk";
+        case TOK_VERB_ABBR: return "abbr";
+        case TOK_VERB_PREPEND: return "prepend";
+        case TOK_VERB_APPEND: return "append";
+        case TOK_VERB_HELP: return "help";
+        case TOK_VERB_EXAMPLES: return "examples";
+        case TOK_VERB_TUTOR: return "tutor";
         case TOK_COMMA: return ",";
         case TOK_AND: return "and";
         case TOK_OR: return "or";
@@ -567,4 +618,35 @@ const char *token_type_name(OttoTokenType type) {
         case TOK_NUMBER: return "NUMBER";
         default: return "TOKEN";
     }
+}
+
+const char * const *lexer_all_keywords(void) {
+    static const char * const kws[] = {
+        // Hooks
+        "before", "every", "after", "on", "extern", "watch",
+        // Verbs
+        "read", "write", "print", "take", "drop", "split", "join", "sort",
+        "replace", "add", "count", "return", "run", "fetch", "compile", "undo",
+        "pick", "table", "chart", "unpack", "intersect", "exclude", "zip",
+        "remove", "move", "copy", "exit", "kill", "filter", "tally", "group",
+        "dirs", "back", "cd", "jump", "benchmark", "jobs", "resume", "repeat",
+        "search", "stat", "view", "hash", "encode", "decode", "uuid", "disk",
+        "abbr", "prepend", "append", "help", "examples", "tutor",
+        // Scanners
+        "line", "lines", "word", "words", "number", "numbers", "byte", "bytes",
+        "file", "files", "process", "processes", "row", "rows", "json", "csv",
+        "yaml", "toml", "jsonl", "urls", "emails", "host", "hosts", "tree",
+        "port", "ports", "status", "commit", "commits", "branch", "branches", "diff",
+        // Ordinals & Pronouns
+        "first", "second", "third", "fourth", "last", "top", "each",
+        "it", "them", "that", "error", "previous",
+        // Adverbs
+        "recursively", "numerically", "descending", "uniquely", "inplace",
+        "concurrently", "casefold", "simulate", "parallel", "background", "ignoring",
+        // Prepositions & Control
+        "into", "onto", "from", "with", "by", "where", "matching", "at", "in",
+        "discard", "replacing", "and", "or", "if", "else", "unless",
+        NULL
+    };
+    return kws;
 }

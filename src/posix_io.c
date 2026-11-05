@@ -1,9 +1,15 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
+#endif
+
 #include "posix_io.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <ctype.h>
+#include <signal.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -17,9 +23,9 @@
 
 bool posix_run_command(const char *cmd_line, Value stdin_val, Value *out_acc, Value *out_err, Arena *arena) {
     if (!cmd_line || !cmd_line[0]) return false;
+    bool merge_stderr = (strstr(cmd_line, "2>&1") != NULL);
 
 #ifdef _WIN32
-    // Create pipes for child stdin and stdout
     SECURITY_ATTRIBUTES sa;
     sa.nLength = sizeof(SECURITY_ATTRIBUTES);
     sa.bInheritHandle = TRUE;
@@ -27,6 +33,7 @@ bool posix_run_command(const char *cmd_line, Value stdin_val, Value *out_acc, Va
 
     HANDLE hStdInRd = NULL, hStdInWr = NULL;
     HANDLE hStdOutRd = NULL, hStdOutWr = NULL;
+    HANDLE hStdErrRd = NULL, hStdErrWr = NULL;
 
     CreatePipe(&hStdInRd, &hStdInWr, &sa, 0);
     SetHandleInformation(hStdInWr, HANDLE_FLAG_INHERIT, 0);
@@ -34,18 +41,22 @@ bool posix_run_command(const char *cmd_line, Value stdin_val, Value *out_acc, Va
     CreatePipe(&hStdOutRd, &hStdOutWr, &sa, 0);
     SetHandleInformation(hStdOutRd, HANDLE_FLAG_INHERIT, 0);
 
+    if (!merge_stderr) {
+        CreatePipe(&hStdErrRd, &hStdErrWr, &sa, 0);
+        SetHandleInformation(hStdErrRd, HANDLE_FLAG_INHERIT, 0);
+    }
+
     STARTUPINFOA si;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
     si.hStdInput = hStdInRd;
     si.hStdOutput = hStdOutWr;
-    si.hStdError = hStdOutWr;
+    si.hStdError = merge_stderr ? hStdOutWr : hStdErrWr;
     si.dwFlags |= STARTF_USESTDHANDLES;
 
     PROCESS_INFORMATION pi;
     ZeroMemory(&pi, sizeof(pi));
 
-    // Construct command line: cmd.exe /c "..." or raw
     char cmd_buf[2048];
     char normalized[2048];
     strncpy(normalized, cmd_line, sizeof(normalized) - 1);
@@ -58,21 +69,24 @@ bool posix_run_command(const char *cmd_line, Value stdin_val, Value *out_acc, Va
     if (!CreateProcessA(NULL, cmd_buf, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
         CloseHandle(hStdInRd); CloseHandle(hStdInWr);
         CloseHandle(hStdOutRd); CloseHandle(hStdOutWr);
+        if (!merge_stderr) { CloseHandle(hStdErrRd); CloseHandle(hStdErrWr); }
         if (out_err) *out_err = val_cstr("Failed to execute process");
         return false;
     }
 
     CloseHandle(hStdInRd);
     CloseHandle(hStdOutWr);
+    if (!merge_stderr) CloseHandle(hStdErrWr);
 
-    // Write stdin if available
     if (stdin_val.type == VAL_SLICE && stdin_val.as.slice.len > 0) {
         DWORD written = 0;
         WriteFile(hStdInWr, stdin_val.as.slice.ptr, (DWORD)stdin_val.as.slice.len, &written, NULL);
     }
     CloseHandle(hStdInWr);
 
-    // Read stdout
+    // Isolate parent shell from foreground Ctrl+C while child executes
+    void (*prev_sigint)(int) = signal(SIGINT, SIG_IGN);
+
     size_t cap = 4096;
     size_t len = 0;
     char *out_buf = (char *)malloc(cap);
@@ -90,35 +104,69 @@ bool posix_run_command(const char *cmd_line, Value stdin_val, Value *out_acc, Va
     CloseHandle(hStdOutRd);
     out_buf[len] = '\0';
 
+    size_t err_cap = 1024;
+    size_t err_len = 0;
+    char *err_buf = (char *)malloc(err_cap);
+    if (!merge_stderr) {
+        while (ReadFile(hStdErrRd, read_chunk, sizeof(read_chunk), &read_bytes, NULL) && read_bytes > 0) {
+            while (err_len + read_bytes + 1 >= err_cap) {
+                err_cap *= 2;
+                err_buf = (char *)realloc(err_buf, err_cap);
+            }
+            memcpy(err_buf + err_len, read_chunk, read_bytes);
+            err_len += read_bytes;
+        }
+        CloseHandle(hStdErrRd);
+    }
+    err_buf[err_len] = '\0';
+
     if (WaitForSingleObject(pi.hProcess, 10000) == WAIT_TIMEOUT) {
         TerminateProcess(pi.hProcess, 1);
     }
+    signal(SIGINT, prev_sigint);
+
     DWORD exit_code = 0;
     GetExitCodeProcess(pi.hProcess, &exit_code);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
 
-    // Trim trailing newline
     while (len > 0 && (out_buf[len - 1] == '\r' || out_buf[len - 1] == '\n')) {
         out_buf[--len] = '\0';
+    }
+    while (err_len > 0 && (err_buf[err_len - 1] == '\r' || err_buf[err_len - 1] == '\n')) {
+        err_buf[--err_len] = '\0';
     }
 
     char *res = arena_strndup(arena, out_buf, len);
     free(out_buf);
-
     if (out_acc) *out_acc = val_slice(res, len);
 
     if (exit_code != 0) {
-        if (out_err) *out_err = val_cstr("Process exited with non-zero status");
+        if (out_err) {
+            if (err_len > 0) {
+                char *eres = arena_strndup(arena, err_buf, err_len);
+                *out_err = val_slice(eres, err_len);
+            } else {
+                *out_err = val_cstr("Process exited with non-zero status");
+            }
+        }
+        free(err_buf);
         return false;
     }
+    free(err_buf);
     return true;
 #else
     int in_pipe[2];
     int out_pipe[2];
+    int err_pipe[2] = {-1, -1};
     if (pipe(in_pipe) != 0) return false;
     if (pipe(out_pipe) != 0) {
         close(in_pipe[0]); close(in_pipe[1]);
+        return false;
+    }
+    if (!merge_stderr && pipe(err_pipe) != 0) {
+        close(in_pipe[0]); close(in_pipe[1]);
+        close(out_pipe[0]); close(out_pipe[1]);
         return false;
     }
 
@@ -126,22 +174,28 @@ bool posix_run_command(const char *cmd_line, Value stdin_val, Value *out_acc, Va
     if (pid < 0) {
         close(in_pipe[0]); close(in_pipe[1]);
         close(out_pipe[0]); close(out_pipe[1]);
+        if (!merge_stderr) { close(err_pipe[0]); close(err_pipe[1]); }
         if (out_err) *out_err = val_cstr("Failed to fork process");
         return false;
     }
 
     if (pid == 0) {
+        signal(SIGINT, SIG_DFL);
         dup2(in_pipe[0], STDIN_FILENO);
         dup2(out_pipe[1], STDOUT_FILENO);
-        dup2(out_pipe[1], STDERR_FILENO);
+        dup2(merge_stderr ? out_pipe[1] : err_pipe[1], STDERR_FILENO);
         close(in_pipe[0]); close(in_pipe[1]);
         close(out_pipe[0]); close(out_pipe[1]);
+        if (!merge_stderr) { close(err_pipe[0]); close(err_pipe[1]); }
         execl("/bin/sh", "sh", "-c", cmd_line, (char *)NULL);
         _exit(127);
     }
 
     close(in_pipe[0]);
     close(out_pipe[1]);
+    if (!merge_stderr) close(err_pipe[1]);
+
+    void (*prev_sigint)(int) = signal(SIGINT, SIG_IGN);
 
     if (stdin_val.type == VAL_SLICE && stdin_val.as.slice.len > 0) {
         ssize_t ignored = write(in_pipe[1], stdin_val.as.slice.ptr, stdin_val.as.slice.len);
@@ -164,17 +218,44 @@ bool posix_run_command(const char *cmd_line, Value stdin_val, Value *out_acc, Va
     }
     close(out_pipe[0]);
 
+    size_t err_cap = 1024;
+    size_t err_len = 0;
+    char *err_buf = (char *)malloc(err_cap);
+    if (!merge_stderr) {
+        while ((nread = read(err_pipe[0], chunk, sizeof(chunk))) > 0) {
+            while (err_len + (size_t)nread + 1 >= err_cap) {
+                err_cap *= 2;
+                err_buf = (char *)realloc(err_buf, err_cap);
+            }
+            memcpy(err_buf + err_len, chunk, (size_t)nread);
+            err_len += (size_t)nread;
+        }
+        close(err_pipe[0]);
+    }
+
     int status = 0;
     waitpid(pid, &status, 0);
+    signal(SIGINT, prev_sigint);
 
     out_buf[len] = '\0';
+    err_buf[err_len] = '\0';
     while (len > 0 && (out_buf[len - 1] == '\r' || out_buf[len - 1] == '\n')) out_buf[--len] = '\0';
+    while (err_len > 0 && (err_buf[err_len - 1] == '\r' || err_buf[err_len - 1] == '\n')) err_buf[--err_len] = '\0';
+
     char *res = arena_strndup(arena, out_buf, len);
     free(out_buf);
     if (out_acc) *out_acc = val_slice(res, len);
 
     bool ok = (WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    if (!ok && out_err) *out_err = val_cstr("Process exited with non-zero status");
+    if (!ok && out_err) {
+        if (err_len > 0) {
+            char *eres = arena_strndup(arena, err_buf, err_len);
+            *out_err = val_slice(eres, err_len);
+        } else {
+            *out_err = val_cstr("Process exited with non-zero status");
+        }
+    }
+    free(err_buf);
     return ok;
 #endif
 }

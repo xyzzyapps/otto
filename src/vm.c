@@ -18,6 +18,8 @@
 #include "shell_env.h"
 #include "ssh_remote.h"
 #include "http_client.h"
+#include "dev_tools.h"
+#include "help_tutor.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -386,6 +388,36 @@ static Value add_numeric_values(Value left, Value right) {
     return val_int(il + ir);
 }
 
+static Value add_values_or_concat(Value left, Value right, Arena *arena) {
+    bool left_is_str = (left.type == VAL_SLICE);
+    bool right_is_str = (right.type == VAL_SLICE);
+
+    if (left_is_str || right_is_str) {
+        bool lok = !left_is_str;
+        bool rok = !right_is_str;
+        if (left_is_str) {
+            (void)slice_to_i64(left.as.slice, &lok);
+            if (!lok) (void)slice_to_f64(left.as.slice, &lok);
+        }
+        if (right_is_str) {
+            (void)slice_to_i64(right.as.slice, &rok);
+            if (!rok) (void)slice_to_f64(right.as.slice, &rok);
+        }
+        if (!lok || !rok) {
+            char *ls = val_to_string(left, arena);
+            char *rs = val_to_string(right, arena);
+            size_t ll = strlen(ls);
+            size_t rl = strlen(rs);
+            char *cat = (char *)arena_alloc(arena, ll + rl + 1);
+            memcpy(cat, ls, ll);
+            memcpy(cat + ll, rs, rl);
+            cat[ll + rl] = '\0';
+            return val_slice(cat, ll + rl);
+        }
+    }
+    return add_numeric_values(left, right);
+}
+
 // Stack for conjunctions / expressions
 #define VM_STACK_MAX 1024
 static Value vm_stack[VM_STACK_MAX];
@@ -688,7 +720,7 @@ void vm_run(VM *vm) {
                     case TOK_GT: frame->acc = val_bool(val_compare(left, right, true) > 0); break;
                     case TOK_GE: frame->acc = val_bool(val_compare(left, right, true) >= 0); break;
                     case TOK_PLUS:
-                        frame->acc = add_numeric_values(left, right);
+                        frame->acc = add_values_or_concat(left, right, &vm->iter_arena);
                         break;
                     case TOK_MINUS: {
                         if (left.type == VAL_INT && right.type == VAL_INT) frame->acc = val_int(left.as.i64 - right.as.i64);
@@ -732,6 +764,10 @@ void vm_run(VM *vm) {
                     }
                 } else if (prop.type == VAL_SLICE && slice_eq_str(prop.as.slice, "last")) {
                     frame->acc = vm->previous_last_arg;
+                } else if (obj.type == VAL_SLICE && prop.type == VAL_SLICE) {
+                    bool handled = false;
+                    Value fprop = dev_stat_prop(obj.as.slice, prop.as.slice, &vm->iter_arena, &handled);
+                    frame->acc = handled ? fprop : val_nil();
                 } else {
                     frame->acc = val_nil();
                 }
@@ -868,20 +904,35 @@ void vm_run(VM *vm) {
 
             // --- Verbs ---
             case OP_VERB_READ: {
-                if (frame->acc.type == VAL_NIL &&
-                    (inst.scanner == TOK_SCAN_PROCESS || inst.scanner == TOK_SCAN_PROCESSES)) {
-                    StreamDesc *sd = scanner_open_stream(TOK_SCAN_PROCESS, NULL, inst.adverbs, &vm->iter_arena);
-                    Value list = val_list_create(&vm->iter_arena, 32);
-                    Value item;
-                    while (sd && sd->next && sd->next(sd, &item, &vm->iter_arena)) {
-                        val_list_append(&list, item, &vm->iter_arena);
+                if (frame->acc.type == VAL_NIL) {
+                    if (inst.scanner == TOK_SCAN_PROCESS || inst.scanner == TOK_SCAN_PROCESSES) {
+                        StreamDesc *sd = scanner_open_stream(TOK_SCAN_PROCESS, NULL, inst.adverbs, &vm->iter_arena);
+                        Value list = val_list_create(&vm->iter_arena, 32);
+                        Value item;
+                        while (sd && sd->next && sd->next(sd, &item, &vm->iter_arena)) {
+                            val_list_append(&list, item, &vm->iter_arena);
+                        }
+                        if (sd && sd->close) sd->close(sd);
+                        frame->acc = list;
+                        break;
                     }
-                    if (sd && sd->close) sd->close(sd);
-                    frame->acc = list;
-                    break;
+                    if (inst.scanner == TOK_SCAN_PORT || inst.scanner == TOK_SCAN_PORTS) {
+                        frame->acc = dev_scan_ports(&vm->iter_arena);
+                        break;
+                    }
+                    if (inst.scanner == TOK_SCAN_STATUS || inst.scanner == TOK_SCAN_COMMITS ||
+                        inst.scanner == TOK_SCAN_BRANCHES || inst.scanner == TOK_SCAN_DIFF) {
+                        frame->acc = dev_git_scan((OttoTokenType)inst.scanner, NULL, &vm->iter_arena);
+                        break;
+                    }
                 }
                 char *path = (frame->acc.type == VAL_SLICE) ? slice_to_cstr(frame->acc.as.slice, &vm->iter_arena) : NULL;
                 if (!path) break;
+
+                if (inst.scanner == TOK_SCAN_DIFF) {
+                    frame->acc = dev_git_scan(TOK_SCAN_DIFF, path, &vm->iter_arena);
+                    break;
+                }
 
                 if (inst.scanner == TOK_SCAN_TREE) {
                     StreamDesc *sd = scanner_open_stream(TOK_SCAN_TREE, path, inst.adverbs, &vm->iter_arena);
@@ -921,8 +972,13 @@ void vm_run(VM *vm) {
                         } else if (inst.scanner == TOK_SCAN_YAML) {
                             bool ok;
                             frame->acc = yaml_parse(content, nread, &vm->iter_arena, &ok);
+                        } else if (inst.scanner == TOK_SCAN_TOML) {
+                            bool ok;
+                            frame->acc = toml_parse(content, nread, &vm->iter_arena, &ok);
                         } else if (inst.scanner == TOK_SCAN_CSV) {
                             frame->acc = csv_parse(content, nread, &vm->iter_arena);
+                        } else if (inst.scanner == TOK_SCAN_JSONL) {
+                            frame->acc = jsonl_parse(content, nread, &vm->iter_arena);
                         } else {
                             frame->acc = val_slice(content, nread);
                         }
@@ -1055,10 +1111,20 @@ void vm_run(VM *vm) {
                     }
                 }
 
-                if (inst.scanner == TOK_SCAN_HOST || inst.scanner == TOK_SCAN_HOSTS) {
-                    if (frame->cur.type == VAL_MAP) {
+                if (frame->cur.type == VAL_MAP && inst.scanner != 0 &&
+                    inst.scanner != TOK_SCAN_LINE && inst.scanner != TOK_SCAN_LINES &&
+                    inst.scanner != TOK_SCAN_WORD && inst.scanner != TOK_SCAN_WORDS &&
+                    inst.scanner != TOK_SCAN_NUMBER && inst.scanner != TOK_SCAN_NUMBERS) {
+                    const char *mkey = NULL;
+                    if (inst.scanner == TOK_SCAN_HOST || inst.scanner == TOK_SCAN_HOSTS) mkey = "host";
+                    else if (inst.scanner == TOK_SCAN_PORT || inst.scanner == TOK_SCAN_PORTS) mkey = "port";
+                    else if (inst.scanner == TOK_SCAN_FILE || inst.scanner == TOK_SCAN_FILES) mkey = "file";
+                    else if (inst.scanner == TOK_SCAN_STATUS) mkey = "state";
+                    else if (inst.scanner == TOK_SCAN_BRANCHES) mkey = "name";
+                    else if (inst.scanner == TOK_SCAN_COMMITS) mkey = "message";
+                    if (mkey) {
                         Value pval = val_nil();
-                        if (val_map_get_str(frame->cur, "host", &pval)) {
+                        if (val_map_get_str(frame->cur, mkey, &pval)) {
                             val_println(pval, stdout);
                             fflush(stdout);
                             break;
@@ -1547,6 +1613,42 @@ void vm_run(VM *vm) {
                         }
                     }
 
+                    // Check live shell abbreviations (`abbr`)
+                    {
+                        char abbr_exp[1024];
+                        if (shell_abbr_expand_line(cmd, abbr_exp, sizeof(abbr_exp) - 4)) {
+                            size_t elen = strlen(abbr_exp);
+                            if (elen > 0 && abbr_exp[elen - 1] != '.') {
+                                abbr_exp[elen++] = '.';
+                                abbr_exp[elen] = '\0';
+                            }
+                            Parser ap;
+                            parser_init(&ap, abbr_exp, elen, false, &vm->perm_arena);
+                            ASTNode *aprog = parser_parse_program(&ap);
+                            if (!ap.has_error && aprog) {
+                                BytecodeEmitter abe;
+                                bc_init(&abe, &vm->perm_arena);
+                                if (bc_compile_program(&abe, aprog)) {
+                                    Instruction *sc = vm->code;
+                                    size_t sl = vm->code_len;
+                                    Value *sk = vm->constants;
+                                    size_t skc = vm->const_count;
+                                    vm->code = abe.code;
+                                    vm->code_len = abe.count;
+                                    vm->constants = abe.constants;
+                                    vm->const_count = abe.const_count;
+                                    vm_run(vm);
+                                    frame = &vm->frames[vm->frame_top];
+                                    vm->code = sc;
+                                    vm->code_len = sl;
+                                    vm->constants = sk;
+                                    vm->const_count = skc;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     struct stat st;
                     if (stat(cmd, &st) == 0 && S_ISDIR(st.st_mode)) {
                         shell_cd(cmd);
@@ -1573,9 +1675,24 @@ void vm_run(VM *vm) {
                     }
                     Value out_val = val_nil();
                     Value out_err = val_nil();
-                    posix_run_command(cmd, stdin_val, &out_val, &out_err, &vm->iter_arena);
+                    bool cmd_ok = posix_run_command(cmd, stdin_val, &out_val, &out_err, &vm->iter_arena);
                     frame->acc = out_val;
                     frame->err = out_err;
+                    if (!cmd_ok) {
+                        const char *p = cmd;
+                        while (*p && isspace((unsigned char)*p)) p++;
+                        const char *we = p;
+                        while (*we && !isspace((unsigned char)*we) && *we != '.') we++;
+                        size_t wlen = (size_t)(we - p);
+                        const char *sug = help_suggest_keyword(p, wlen);
+                        const char *ros = help_rosetta_tip(p);
+                        if (sug) {
+                            fprintf(stderr, "\033[1;31mUnknown command '%.*s'.\033[0m Did you mean '\033[1;32m%s\033[0m'?\n",
+                                    (int)wlen, p, sug);
+                        } else if (ros) {
+                            fprintf(stderr, "\033[1;36mTip:\033[0m %s\n", ros);
+                        }
+                    }
                 }
                 break;
             }
@@ -1821,11 +1938,12 @@ void vm_run(VM *vm) {
 
             case OP_VERB_KILL: {
                 int target_id = (inst.operand != NO_CONST) ? (int)inst.operand : 0;
-                if (target_id == 0 && frame->acc.type == VAL_MAP) {
+                if (target_id == 0 && (frame->acc.type == VAL_MAP || frame->cur.type == VAL_MAP)) {
+                    Value mobj = (frame->acc.type == VAL_MAP) ? frame->acc : frame->cur;
                     Value pid_val = val_nil();
-                    if (val_map_get_str(frame->acc, "pid", &pid_val) && pid_val.type == VAL_INT) {
+                    if (val_map_get_str(mobj, "pid", &pid_val) && pid_val.type == VAL_INT) {
                         target_id = (int)pid_val.as.i64;
-                    } else if (val_map_get_str(frame->acc, "id", &pid_val) && pid_val.type == VAL_INT) {
+                    } else if (val_map_get_str(mobj, "id", &pid_val) && pid_val.type == VAL_INT) {
                         target_id = (int)pid_val.as.i64;
                     }
                 } else if (target_id == 0 && frame->acc.type == VAL_INT) {
@@ -1935,10 +2053,19 @@ void vm_run(VM *vm) {
                         size_t clen = (fetched.type == VAL_SLICE) ? fetched.as.slice.len : strlen(cstr);
                         bool ok = false;
                         frame->acc = yaml_parse(cstr, clen, &vm->iter_arena, &ok);
+                    } else if (inst.scanner == TOK_SCAN_TOML) {
+                        char *cstr = (fetched.type == VAL_SLICE) ? (char *)fetched.as.slice.ptr : val_to_string(fetched, &vm->iter_arena);
+                        size_t clen = (fetched.type == VAL_SLICE) ? fetched.as.slice.len : strlen(cstr);
+                        bool ok = false;
+                        frame->acc = toml_parse(cstr, clen, &vm->iter_arena, &ok);
                     } else if (inst.scanner == TOK_SCAN_CSV) {
                         char *cstr = (fetched.type == VAL_SLICE) ? (char *)fetched.as.slice.ptr : val_to_string(fetched, &vm->iter_arena);
                         size_t clen = (fetched.type == VAL_SLICE) ? fetched.as.slice.len : strlen(cstr);
                         frame->acc = csv_parse(cstr, clen, &vm->iter_arena);
+                    } else if (inst.scanner == TOK_SCAN_JSONL) {
+                        char *cstr = (fetched.type == VAL_SLICE) ? (char *)fetched.as.slice.ptr : val_to_string(fetched, &vm->iter_arena);
+                        size_t clen = (fetched.type == VAL_SLICE) ? fetched.as.slice.len : strlen(cstr);
+                        frame->acc = jsonl_parse(cstr, clen, &vm->iter_arena);
                     } else {
                         frame->acc = fetched;
                     }
@@ -2121,6 +2248,151 @@ void vm_run(VM *vm) {
                 frame->acc = res_map;
                 break;
             }
+
+            case OP_VERB_SEARCH: {
+                Value dir_val = (inst.slot_mask & PREP_IN) ? pop() : val_nil();
+                const char *root_dir = ".";
+                if (dir_val.type != VAL_NIL) {
+                    root_dir = val_to_string(dir_val, &vm->iter_arena);
+                }
+                const char *pat = (frame->acc.type == VAL_SLICE)
+                    ? slice_to_cstr(frame->acc.as.slice, &vm->iter_arena)
+                    : val_to_string(frame->acc, &vm->iter_arena);
+                frame->acc = dev_search(pat, root_dir, inst.adverbs, &vm->iter_arena);
+                break;
+            }
+
+            case OP_VERB_STAT: {
+                const char *path = ".";
+                if (frame->acc.type == VAL_SLICE && frame->acc.as.slice.len > 0) {
+                    path = slice_to_cstr(frame->acc.as.slice, &vm->iter_arena);
+                } else if (inst.operand != NO_CONST && inst.operand < vm->const_count) {
+                    path = val_to_string(vm->constants[inst.operand], &vm->iter_arena);
+                }
+                Value res = dev_stat_path(path, inst.adverbs, &vm->iter_arena);
+                if (res.type == VAL_NIL) frame->err = val_cstr("stat: path not found");
+                frame->acc = res;
+                break;
+            }
+
+            case OP_VERB_VIEW: {
+                Value src = (frame->acc.type != VAL_NIL) ? frame->acc : frame->cur;
+                frame->acc = dev_view(src, &vm->iter_arena);
+                break;
+            }
+
+            case OP_VERB_HASH: {
+                const char *algo = "sha256";
+                if (inst.operand != NO_CONST && inst.operand < vm->const_count) {
+                    algo = val_to_string(vm->constants[inst.operand], &vm->iter_arena);
+                }
+                Value src = (frame->acc.type != VAL_NIL) ? frame->acc : frame->cur;
+                frame->acc = dev_hash(src, algo, &vm->iter_arena);
+                break;
+            }
+
+            case OP_VERB_ENCODE:
+            case OP_VERB_DECODE: {
+                const char *fmt = "base64";
+                if (inst.operand != NO_CONST && inst.operand < vm->const_count) {
+                    fmt = val_to_string(vm->constants[inst.operand], &vm->iter_arena);
+                }
+                Value src = (frame->acc.type != VAL_NIL) ? frame->acc : frame->cur;
+                frame->acc = dev_encode(src, fmt, (op == OP_VERB_DECODE), &vm->iter_arena);
+                break;
+            }
+
+            case OP_VERB_UUID:
+                frame->acc = dev_uuid(&vm->iter_arena);
+                break;
+
+            case OP_VERB_DISK: {
+                const char *path = NULL;
+                if (frame->acc.type == VAL_SLICE && frame->acc.as.slice.len > 0) {
+                    path = slice_to_cstr(frame->acc.as.slice, &vm->iter_arena);
+                } else if (inst.operand != NO_CONST && inst.operand < vm->const_count) {
+                    path = val_to_string(vm->constants[inst.operand], &vm->iter_arena);
+                }
+                frame->acc = dev_disk_usage(path, &vm->iter_arena);
+                break;
+            }
+
+            case OP_VERB_ABBR: {
+                if (inst.slot_mask != NO_CONST && inst.slot_mask < vm->const_count &&
+                    inst.operand != NO_CONST && inst.operand < vm->const_count) {
+                    const char *sname = val_to_string(vm->constants[inst.slot_mask], &vm->iter_arena);
+                    const char *exp = val_to_string(vm->constants[inst.operand], &vm->iter_arena);
+                    shell_abbr_set(sname, exp);
+                    frame->acc = val_cstr(arena_strdup(&vm->iter_arena, exp));
+                } else if (inst.slot_mask != NO_CONST && inst.slot_mask < vm->const_count) {
+                    const char *sname = val_to_string(vm->constants[inst.slot_mask], &vm->iter_arena);
+                    const char *exp = shell_abbr_get(sname);
+                    frame->acc = exp ? val_cstr(arena_strdup(&vm->iter_arena, exp)) : val_nil();
+                } else {
+                    frame->acc = shell_abbr_list(&vm->iter_arena);
+                }
+                break;
+            }
+
+            case OP_VERB_PREPEND:
+            case OP_VERB_APPEND: {
+                bool is_prep = (op == OP_VERB_PREPEND);
+                Value item_val = frame->acc;
+                if (inst.slot_mask & PREP_WITH) {
+                    Value base_list = pop();
+                    if (base_list.type == VAL_LIST) {
+                        size_t len = val_list_len(base_list);
+                        Value out = val_list_create(&vm->iter_arena, len + 1);
+                        if (is_prep) val_list_append(&out, item_val, &vm->iter_arena);
+                        for (size_t i = 0; i < len; i++) {
+                            val_list_append(&out, val_list_get(base_list, i), &vm->iter_arena);
+                        }
+                        if (!is_prep) val_list_append(&out, item_val, &vm->iter_arena);
+                        frame->acc = out;
+                    }
+                    break;
+                }
+                if ((inst.slot_mask & PREP_INTO) && inst.operand != NO_CONST && inst.operand < vm->const_count) {
+                    Value tgt = vm->constants[inst.operand];
+                    if (tgt.type == VAL_SLICE &&
+                        (slice_eq_str(tgt.as.slice, "$PATH") || slice_eq_str(tgt.as.slice, "$path"))) {
+                        char *dir = val_to_string(item_val, &vm->iter_arena);
+                        frame->acc = shell_path_modify(dir, is_prep, &vm->iter_arena);
+                    } else if (tgt.type == VAL_SLICE) {
+                        Value existing = val_nil();
+                        if (!val_map_get(vm->global_symbols, tgt.as.slice, &existing) || existing.type != VAL_LIST) {
+                            existing = val_list_create(&vm->perm_arena, 4);
+                        }
+                        size_t len = val_list_len(existing);
+                        Value out = val_list_create(&vm->perm_arena, len + 1);
+                        if (is_prep) val_list_append(&out, val_clone_to_arena(item_val, &vm->perm_arena), &vm->perm_arena);
+                        for (size_t i = 0; i < len; i++) {
+                            val_list_append(&out, val_list_get(existing, i), &vm->perm_arena);
+                        }
+                        if (!is_prep) val_list_append(&out, val_clone_to_arena(item_val, &vm->perm_arena), &vm->perm_arena);
+                        val_map_set(&vm->global_symbols, tgt.as.slice, out, &vm->perm_arena);
+                        frame->acc = out;
+                    }
+                }
+                break;
+            }
+
+            case OP_VERB_HELP:
+            case OP_VERB_EXAMPLES: {
+                const char *topic = NULL;
+                if (frame->acc.type == VAL_SLICE && frame->acc.as.slice.len > 0) {
+                    topic = slice_to_cstr(frame->acc.as.slice, &vm->iter_arena);
+                } else if (inst.operand != NO_CONST && inst.operand < vm->const_count) {
+                    topic = val_to_string(vm->constants[inst.operand], &vm->iter_arena);
+                }
+                frame->acc = help_show(topic, (op == OP_VERB_EXAMPLES), &vm->iter_arena);
+                break;
+            }
+
+            case OP_VERB_TUTOR:
+                tutor_run(vm, tui_is_interactive());
+                frame->acc = val_bool(true);
+                break;
 
             case OP_WATCH_LOOP: {
                 const char *path = ".";

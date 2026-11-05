@@ -243,6 +243,20 @@ static uint8_t verb_to_opcode(OttoTokenType verb) {
         case TOK_VERB_JOBS: return OP_VERB_JOBS;
         case TOK_VERB_RESUME: return OP_VERB_RESUME;
         case TOK_VERB_REPEAT: return OP_VERB_REPEAT;
+        case TOK_VERB_SEARCH: return OP_VERB_SEARCH;
+        case TOK_VERB_STAT: return OP_VERB_STAT;
+        case TOK_VERB_VIEW: return OP_VERB_VIEW;
+        case TOK_VERB_HASH: return OP_VERB_HASH;
+        case TOK_VERB_ENCODE: return OP_VERB_ENCODE;
+        case TOK_VERB_DECODE: return OP_VERB_DECODE;
+        case TOK_VERB_UUID: return OP_VERB_UUID;
+        case TOK_VERB_DISK: return OP_VERB_DISK;
+        case TOK_VERB_ABBR: return OP_VERB_ABBR;
+        case TOK_VERB_PREPEND: return OP_VERB_PREPEND;
+        case TOK_VERB_APPEND: return OP_VERB_APPEND;
+        case TOK_VERB_HELP: return OP_VERB_HELP;
+        case TOK_VERB_EXAMPLES: return OP_VERB_EXAMPLES;
+        case TOK_VERB_TUTOR: return OP_VERB_TUTOR;
         default: return OP_VERB_RUN;
     }
 }
@@ -337,6 +351,10 @@ static bool compile_command(BytecodeEmitter *be, ASTNode *cmd) {
             slot_mask |= PREP_AT;
             compile_expr(be, pexpr);
             bc_emit(be, OP_PUSH_ACC, 0, 0, 0, 0);
+        } else if (prep == TOK_PREP_IN && pexpr) {
+            slot_mask |= PREP_IN;
+            compile_expr(be, pexpr);
+            bc_emit(be, OP_PUSH_ACC, 0, 0, 0, 0);
         } else if (verb == TOK_VERB_REPEAT && prep == TOK_PREP_REPLACING && pexpr) {
             slot_mask |= PREP_REPLACING;
             compile_expr(be, pexpr);
@@ -382,6 +400,70 @@ static bool compile_command(BytecodeEmitter *be, ASTNode *cmd) {
             }
         }
         bc_emit(be, op, scanner, adverbs, slot_mask, operand);
+        end_cond_guard(be, cmd->as.cmd.cond, jcond);
+        return true;
+    }
+
+    if (verb == TOK_VERB_ABBR) {
+        uint16_t name_idx = NO_CONST;
+        uint16_t exp_idx = NO_CONST;
+        if (cmd->as.cmd.direct_arg && cmd->as.cmd.direct_arg->type == AST_EXPR_LITERAL) {
+            name_idx = bc_add_const(be, cmd->as.cmd.direct_arg->as.lit.val);
+        } else if (cmd->as.cmd.direct_arg && cmd->as.cmd.direct_arg->type == AST_EXPR_VAR) {
+            name_idx = bc_add_const(be, val_slice(cmd->as.cmd.direct_arg->as.var.name.ptr, cmd->as.cmd.direct_arg->as.var.name.len));
+        }
+        for (size_t i = 0; i < cmd->as.cmd.prep_count; i++) {
+            OttoTokenType prep = cmd->as.cmd.preps[i].prep;
+            ASTNode *pexpr = cmd->as.cmd.preps[i].expr;
+            if (prep == TOK_PREP_WITH && pexpr && pexpr->type == AST_EXPR_LITERAL) {
+                exp_idx = bc_add_const(be, pexpr->as.lit.val);
+            } else if (prep == TOK_PREP_INTO) {
+                post_into_expr = pexpr;
+            } else if (prep == TOK_PREP_DISCARD) {
+                post_discard = true;
+            }
+        }
+        bc_emit(be, op, scanner, adverbs, name_idx, exp_idx);
+        if (post_into_expr) emit_store_target(be, post_into_expr);
+        if (post_discard) bc_emit(be, OP_DISCARD, 0, 0, 0, 0);
+        end_cond_guard(be, cmd->as.cmd.cond, jcond);
+        return true;
+    }
+
+    if (verb == TOK_VERB_HASH || verb == TOK_VERB_ENCODE || verb == TOK_VERB_DECODE) {
+        for (size_t i = 0; i < cmd->as.cmd.prep_count; i++) {
+            OttoTokenType prep = cmd->as.cmd.preps[i].prep;
+            ASTNode *pexpr = cmd->as.cmd.preps[i].expr;
+            if ((prep == TOK_PREP_WITH || prep == TOK_PREP_BY) && pexpr) {
+                if (pexpr->type == AST_EXPR_LITERAL) operand = bc_add_const(be, pexpr->as.lit.val);
+                else if (pexpr->type == AST_EXPR_VAR) operand = bc_add_const(be, val_slice(pexpr->as.var.name.ptr, pexpr->as.var.name.len));
+            } else if (prep == TOK_PREP_INTO) {
+                post_into_expr = pexpr;
+            } else if (prep == TOK_PREP_DISCARD) {
+                post_discard = true;
+            }
+        }
+        if (cmd->as.cmd.direct_arg) {
+            Slice dname = {NULL, 0};
+            if (cmd->as.cmd.direct_arg->type == AST_EXPR_VAR) {
+                dname = cmd->as.cmd.direct_arg->as.var.name;
+            } else if (cmd->as.cmd.direct_arg->type == AST_EXPR_LITERAL &&
+                       cmd->as.cmd.direct_arg->as.lit.val.type == VAL_SLICE &&
+                       operand == NO_CONST) {
+                dname = cmd->as.cmd.direct_arg->as.lit.val.as.slice;
+            }
+            bool is_algo_name = (slice_eq_str(dname, "sha256") || slice_eq_str(dname, "crc32") ||
+                                 slice_eq_str(dname, "base64") || slice_eq_str(dname, "hex") ||
+                                 slice_eq_str(dname, "url"));
+            if (is_algo_name && operand == NO_CONST) {
+                operand = bc_add_const(be, val_slice(dname.ptr, dname.len));
+            } else {
+                compile_expr(be, cmd->as.cmd.direct_arg);
+            }
+        }
+        bc_emit(be, op, scanner, adverbs, slot_mask, operand);
+        if (post_into_expr) emit_store_target(be, post_into_expr);
+        if (post_discard) bc_emit(be, OP_DISCARD, 0, 0, 0, 0);
         end_cond_guard(be, cmd->as.cmd.cond, jcond);
         return true;
     }
@@ -435,10 +517,11 @@ static bool compile_command(BytecodeEmitter *be, ASTNode *cmd) {
         return true;
     }
 
-    // For `add <expr>` without `into` (e.g. `100, add 50`), preserve left ACC on stack
-    if (verb == TOK_VERB_ADD && cmd->as.cmd.ordinal == 0 && cmd->as.cmd.prep_count == 0 && cmd->as.cmd.direct_arg) {
+    // For `add <expr>` or `prepend <expr>` or `append <expr>` without `into` (e.g. `100, add 50` or `[2,3], prepend 1`), preserve left ACC on stack
+    if ((verb == TOK_VERB_ADD || verb == TOK_VERB_PREPEND || verb == TOK_VERB_APPEND) &&
+        cmd->as.cmd.ordinal == 0 && cmd->as.cmd.prep_count == 0 && cmd->as.cmd.direct_arg) {
         bc_emit(be, OP_PUSH_ACC, 0, 0, 0, 0);
-        slot_mask |= PREP_WITH; // signals binary accumulator addition
+        slot_mask |= PREP_WITH;
     }
 
     if (cmd->as.cmd.direct_arg && verb != TOK_VERB_REPEAT) {
@@ -506,7 +589,8 @@ static bool compile_command(BytecodeEmitter *be, ASTNode *cmd) {
         OttoTokenType prep = cmd->as.cmd.preps[i].prep;
         ASTNode *pexpr = cmd->as.cmd.preps[i].expr;
 
-        if (prep == TOK_PREP_AT || (verb == TOK_VERB_REPEAT && (prep == TOK_PREP_REPLACING || prep == TOK_PREP_WITH))) {
+        if (prep == TOK_PREP_AT || prep == TOK_PREP_IN ||
+            (verb == TOK_VERB_REPEAT && (prep == TOK_PREP_REPLACING || prep == TOK_PREP_WITH))) {
             continue; // already pushed before direct_arg
         }
 
@@ -549,7 +633,8 @@ static bool compile_command(BytecodeEmitter *be, ASTNode *cmd) {
                 }
                 continue;
             }
-            if (verb != TOK_VERB_COMPILE && verb != TOK_VERB_COPY && verb != TOK_VERB_MOVE && verb != TOK_VERB_WRITE) {
+            if (verb != TOK_VERB_COMPILE && verb != TOK_VERB_COPY && verb != TOK_VERB_MOVE &&
+                verb != TOK_VERB_WRITE && verb != TOK_VERB_PREPEND && verb != TOK_VERB_APPEND) {
                 post_into_expr = pexpr;
                 continue;
             }
@@ -866,11 +951,14 @@ bool bc_compile_program(BytecodeEmitter *be, ASTNode *program) {
             uint8_t sc = (uint8_t)item->as.block.scanner;
 
             ASTNode *where_expr = NULL;
+            ASTNode *match_expr = NULL;
             const char *where_sql = NULL;
             for (size_t p = 0; p < item->as.block.prep_count; p++) {
                 if (item->as.block.preps[p].prep == TOK_PREP_WHERE) {
                     where_expr = item->as.block.preps[p].expr;
                     where_sql = expr_to_sql_where(where_expr, be->arena);
+                } else if (item->as.block.preps[p].prep == TOK_PREP_MATCHING) {
+                    match_expr = item->as.block.preps[p].expr;
                 }
             }
             uint16_t where_idx = NO_CONST;
@@ -884,15 +972,27 @@ bool bc_compile_program(BytecodeEmitter *be, ASTNode *program) {
             size_t loop_next = bc_emit(be, OP_STREAM_NEXT, sc, 0, 0, 0);
 
             size_t skip_row = 0;
+            size_t skip_match = 0;
+            if (match_expr && match_expr->type == AST_EXPR_LITERAL) {
+                uint16_t m_idx = bc_add_const(be, match_expr->as.lit.val);
+                bc_emit(be, OP_DISCARD, 0, 0, 0, 0);
+                bc_emit(be, OP_VERB_TAKE, 0, item->as.block.adverbs, PREP_MATCHING, m_idx);
+                skip_match = bc_emit(be, OP_JUMP_IF_FALSE, 0, 0, 0, 0);
+                bc_emit(be, OP_DISCARD, 0, 0, 0, 0);
+            }
             if (where_expr) {
                 compile_expr(be, where_expr);
                 skip_row = bc_emit(be, OP_JUMP_IF_FALSE, 0, 0, 0, 0);
+                bc_emit(be, OP_DISCARD, 0, 0, 0, 0);
             }
 
             bc_compile_pipe(be, item->as.block.body);
 
             if (where_expr) {
                 bc_patch_operand(be, skip_row, (uint16_t)be->count);
+            }
+            if (match_expr && match_expr->type == AST_EXPR_LITERAL) {
+                bc_patch_operand(be, skip_match, (uint16_t)be->count);
             }
 
             bc_emit(be, OP_RESET_ITER, 0, 0, 0, 0);

@@ -8,23 +8,30 @@
   <link rel="icon" type="image/svg+xml" href="assets/otto-logo.svg">
   <style>
     :root {
-      --bg: #090a0f;
-      --bg-card: #12141c;
-      --bg-card-hover: #181b26;
-      --bg-term: #0d0e15;
-      --border: #232736;
-      --border-focus: #3b82f6;
-      --text: #f1f5f9;
-      --text-muted: #94a3b8;
+      --bg: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f1f5f9;
+      --bg-term: #0f172a;
+      --border: #e2e8f0;
+      --border-subtle: #cbd5e1;
+      --border-focus: #0284c7;
+      --text: #0f172a;
+      --text-muted: #334155;
       --text-dim: #64748b;
-      --accent: #38bdf8;
-      --accent-glow: rgba(56, 189, 248, 0.15);
-      --accent-green: #4ade80;
-      --accent-amber: #fbbf24;
-      --accent-purple: #c084fc;
-      --accent-red: #f87171;
+      --accent: #0284c7;
+      --accent-hover: #0369a1;
+      --accent-light: #e0f2fe;
+      --accent-green: #16a34a;
+      --accent-amber: #d97706;
+      --accent-purple: #7c3aed;
+      --accent-red: #dc2626;
       --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
       --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.07), 0 4px 6px -4px rgba(0, 0, 0, 0.03);
+      --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -38,31 +45,33 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Ambient background glow */
-    .glow-bg {
+    /* Ambient Subtle Grid & Header */
+    .bg-grid {
       position: absolute;
       top: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 1000px;
-      height: 500px;
-      background: radial-gradient(circle, rgba(56, 189, 248, 0.08) 0%, rgba(9, 10, 15, 0) 70%);
+      left: 0;
+      right: 0;
+      height: 600px;
+      background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+      background-size: 32px 32px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 100%);
+      -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 100%);
       pointer-events: none;
       z-index: 0;
     }
 
-    /* Navigation */
     header {
       position: sticky;
       top: 0;
       z-index: 100;
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      background: rgba(9, 10, 15, 0.75);
+      background: rgba(255, 255, 255, 0.9);
       border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
     }
     .nav-container {
-      max-width: 1200px;
+      max-width: 1240px;
       margin: 0 auto;
       padding: 0.85rem 1.5rem;
       display: flex;
@@ -75,26 +84,27 @@
       gap: 0.75rem;
       text-decoration: none;
       color: var(--text);
-      font-weight: 700;
-      font-size: 1.25rem;
+      font-weight: 800;
+      font-size: 1.3rem;
       letter-spacing: -0.02em;
     }
     .brand img {
-      width: 34px;
-      height: 34px;
+      width: 36px;
+      height: 36px;
       border-radius: 8px;
+      box-shadow: var(--shadow-sm);
     }
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 1.5rem;
+      gap: 1.75rem;
       list-style: none;
     }
     .nav-links a {
       color: var(--text-muted);
       text-decoration: none;
-      font-size: 0.92rem;
-      font-weight: 500;
+      font-size: 0.95rem;
+      font-weight: 600;
       transition: color 0.15s ease;
     }
     .nav-links a:hover { color: var(--accent); }
@@ -102,28 +112,29 @@
       display: inline-flex;
       align-items: center;
       gap: 0.5rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
+      background: #ffffff;
+      border: 1px solid var(--border-subtle);
       color: var(--text);
-      padding: 0.45rem 0.9rem;
+      padding: 0.5rem 1rem;
       border-radius: 8px;
-      font-size: 0.88rem;
+      font-size: 0.9rem;
       font-weight: 600;
       text-decoration: none;
+      box-shadow: var(--shadow-sm);
       transition: all 0.2s ease;
     }
     .btn-github:hover {
-      background: var(--border);
+      background: var(--bg-card-hover);
       border-color: var(--accent);
-      color: #fff;
+      color: var(--accent);
     }
 
     /* Hero Section */
     .hero {
       position: relative;
-      max-width: 1200px;
+      max-width: 1240px;
       margin: 0 auto;
-      padding: 4.5rem 1.5rem 3rem;
+      padding: 4.5rem 1.5rem 2.5rem;
       text-align: center;
       z-index: 1;
     }
@@ -131,41 +142,41 @@
       display: inline-flex;
       align-items: center;
       gap: 0.5rem;
-      padding: 0.35rem 0.85rem;
+      padding: 0.4rem 1rem;
       border-radius: 9999px;
-      background: rgba(56, 189, 248, 0.1);
-      border: 1px solid rgba(56, 189, 248, 0.25);
+      background: var(--accent-light);
+      border: 1px solid rgba(2, 132, 199, 0.3);
       color: var(--accent);
-      font-size: 0.82rem;
-      font-weight: 600;
+      font-size: 0.85rem;
+      font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       margin-bottom: 1.5rem;
     }
     .badge .dot {
-      width: 6px;
-      height: 6px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       background: var(--accent);
-      box-shadow: 0 0 8px var(--accent);
+      box-shadow: 0 0 8px rgba(2, 132, 199, 0.6);
     }
     .hero h1 {
-      font-size: 3.5rem;
+      font-size: 3.6rem;
       line-height: 1.15;
-      font-weight: 800;
+      font-weight: 900;
       letter-spacing: -0.035em;
       margin-bottom: 1.25rem;
-      color: #ffffff;
+      color: #0f172a;
     }
     .hero h1 span {
-      background: linear-gradient(135deg, #38bdf8 0%, #a855f7 100%);
+      background: linear-gradient(135deg, #0284c7 0%, #7c3aed 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
     .hero p {
-      max-width: 760px;
+      max-width: 780px;
       margin: 0 auto 2.25rem;
-      font-size: 1.2rem;
+      font-size: 1.25rem;
       color: var(--text-muted);
       line-height: 1.6;
     }
@@ -178,84 +189,193 @@
     }
     .btn-primary {
       background: var(--accent);
-      color: #040914;
+      color: #ffffff;
       font-weight: 700;
-      padding: 0.8rem 1.75rem;
+      padding: 0.85rem 1.85rem;
       border-radius: 10px;
       text-decoration: none;
-      font-size: 1rem;
-      box-shadow: 0 4px 20px rgba(56, 189, 248, 0.35);
+      font-size: 1.05rem;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
       transition: all 0.2s ease;
     }
     .btn-primary:hover {
-      background: #7dd3fc;
+      background: var(--accent-hover);
       transform: translateY(-2px);
-      box-shadow: 0 6px 25px rgba(56, 189, 248, 0.45);
+      box-shadow: 0 6px 20px rgba(2, 132, 199, 0.45);
     }
     .btn-secondary {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
+      background: #ffffff;
+      border: 1px solid var(--border-subtle);
       color: var(--text);
       font-weight: 600;
-      padding: 0.8rem 1.75rem;
+      padding: 0.85rem 1.85rem;
       border-radius: 10px;
       text-decoration: none;
-      font-size: 1rem;
+      font-size: 1.05rem;
+      box-shadow: var(--shadow-sm);
       transition: all 0.2s ease;
     }
     .btn-secondary:hover {
-      background: var(--border);
+      background: var(--bg-card-hover);
       border-color: var(--text-dim);
     }
 
-    /* Terminal Component (Fish-style showcase) */
-    .terminal-wrapper {
-      max-width: 960px;
-      margin: 0 auto;
+    /* Interactive Explorer Section (Full Showcase Layout) */
+    .explorer-section {
+      max-width: 1240px;
+      margin: 0 auto 5rem;
+      padding: 0 1.5rem;
       text-align: left;
     }
-    .terminal-tabs {
+    .explorer-header {
       display: flex;
-      gap: 0.5rem;
-      overflow-x: auto;
-      padding-bottom: 0.75rem;
-      scrollbar-width: none;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+      gap: 1rem;
     }
-    .terminal-tabs::-webkit-scrollbar { display: none; }
-    .tab-btn {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
+    .explorer-header h2 {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+    .explorer-header p {
       color: var(--text-muted);
-      padding: 0.5rem 1rem;
-      border-radius: 8px 8px 0 0;
-      font-size: 0.85rem;
-      font-weight: 600;
-      cursor: pointer;
+      font-size: 1rem;
+    }
+    .explorer-nav {
       display: flex;
       align-items: center;
-      gap: 0.45rem;
-      white-space: nowrap;
+      gap: 0.75rem;
+    }
+    .nav-arrow-btn {
+      background: #ffffff;
+      border: 1px solid var(--border-subtle);
+      color: var(--text);
+      padding: 0.45rem 0.9rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      box-shadow: var(--shadow-sm);
       transition: all 0.15s ease;
     }
-    .tab-btn:hover { color: var(--text); background: var(--bg-card-hover); }
-    .tab-btn.active {
-      background: var(--bg-term);
+    .nav-arrow-btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--accent);
       color: var(--accent);
+    }
+    .example-counter {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+    }
+
+    /* 2-Column Explorer Container */
+    .explorer-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 1.5rem;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+      min-height: 540px;
+    }
+
+    /* Left Column: Example Selector Menu */
+    .example-list {
+      background: #f8fafc;
+      border-right: 1px solid var(--border);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      overflow-y: auto;
+      max-height: 600px;
+    }
+    .example-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s ease;
+    }
+    .example-item:hover {
+      background: #ffffff;
       border-color: var(--border);
-      border-bottom-color: var(--bg-term);
+      box-shadow: var(--shadow-sm);
+    }
+    .example-item.active {
+      background: #ffffff;
+      border-color: var(--accent);
+      box-shadow: var(--shadow-md);
       position: relative;
     }
-    .terminal-window {
+    .example-item.active::before {
+      content: "";
+      position: absolute;
+      left: -1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 4px;
+      height: 70%;
+      background: var(--accent);
+      border-radius: 0 4px 4px 0;
+    }
+    .item-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .item-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .item-tag {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 9999px;
+      background: var(--border);
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .example-item.active .item-tag {
+      background: var(--accent-light);
+      color: var(--accent);
+    }
+    .item-desc {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* Right Column: Live Terminal Simulator */
+    .terminal-pane {
+      display: flex;
+      flex-direction: column;
       background: var(--bg-term);
-      border: 1px solid var(--border);
-      border-radius: 0 12px 12px 12px;
-      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6);
-      overflow: hidden;
+      color: #f1f5f9;
     }
     .terminal-titlebar {
-      padding: 0.75rem 1rem;
-      background: rgba(18, 20, 28, 0.6);
-      border-bottom: 1px solid var(--border);
+      padding: 0.85rem 1.25rem;
+      background: #090e1a;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -274,15 +394,49 @@
     .dot-green { background: #22c55e; }
     .terminal-title {
       font-family: var(--font-mono);
-      font-size: 0.8rem;
-      color: var(--text-dim);
+      font-size: 0.85rem;
+      color: #94a3b8;
     }
+    .term-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+    .btn-run {
+      background: #16a34a;
+      color: #ffffff;
+      border: none;
+      padding: 0.35rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: all 0.15s ease;
+    }
+    .btn-run:hover { background: #15803d; }
+    .btn-copy {
+      background: rgba(255, 255, 255, 0.1);
+      color: #cbd5e1;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 0.35rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-copy:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
+
     .terminal-body {
       padding: 1.5rem;
       font-family: var(--font-mono);
       font-size: 0.95rem;
       line-height: 1.65;
-      min-height: 220px;
+      flex: 1;
+      overflow-y: auto;
     }
     .prompt-line {
       display: flex;
@@ -291,58 +445,62 @@
       gap: 0.5rem;
       margin-bottom: 0.75rem;
     }
-    .prompt-badge {
-      color: var(--accent);
-      font-weight: 700;
-    }
-    .prompt-dir {
-      color: var(--accent-purple);
-    }
-    .prompt-branch {
-      color: var(--accent-green);
-    }
-    .prompt-time {
-      color: var(--text-dim);
-      font-size: 0.8rem;
-    }
-    .prompt-char {
-      color: var(--text-muted);
-      font-weight: 700;
-    }
-    .command-text {
-      color: #fff;
-    }
-    .ghost-text {
-      color: #4b5563;
-      user-select: none;
-    }
+    .prompt-badge { color: #38bdf8; font-weight: 700; }
+    .prompt-dir { color: #c084fc; }
+    .prompt-branch { color: #4ade80; }
+    .prompt-time { color: #64748b; font-size: 0.8rem; }
+    .prompt-char { color: #94a3b8; font-weight: 700; }
+    .command-text { color: #ffffff; }
     .terminal-output {
-      color: var(--text-muted);
-      border-left: 2px solid var(--border);
+      color: #cbd5e1;
+      border-left: 2px solid #334155;
       padding-left: 1rem;
-      margin-top: 0.5rem;
+      margin-top: 0.75rem;
       white-space: pre-wrap;
+      animation: fadeIn 0.25s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Explanation Box beneath Terminal */
+    .explanation-box {
+      background: #090e1a;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 1.25rem 1.5rem;
+      font-size: 0.9rem;
+      color: #94a3b8;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .explanation-title {
+      color: #38bdf8;
+      font-weight: 700;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
 
     /* Syntax Highlighting Colors */
-    .syn-verb { color: #38bdf8; font-weight: 600; }
+    .syn-verb { color: #38bdf8; font-weight: 700; }
     .syn-noun { color: #f472b6; }
     .syn-str { color: #4ade80; }
     .syn-num { color: #fbbf24; }
-    .syn-ord { color: #fb923c; font-weight: 600; }
+    .syn-ord { color: #fb923c; font-weight: 700; }
     .syn-adv { color: #c084fc; font-style: italic; }
-    .syn-reg { color: #38bdf8; text-decoration: underline; text-underline-offset: 3px; }
-    .syn-pipe { color: #e2e8f0; font-weight: 700; }
+    .syn-pipe { color: #ffffff; font-weight: 700; }
 
     /* Features Section */
     .section {
-      max-width: 1200px;
+      max-width: 1240px;
       margin: 0 auto;
-      padding: 6rem 1.5rem;
+      padding: 5rem 1.5rem;
     }
     .section-header {
       text-align: center;
-      max-width: 700px;
+      max-width: 750px;
       margin: 0 auto 3.5rem;
     }
     .section-header h2 {
@@ -350,48 +508,49 @@
       font-weight: 800;
       letter-spacing: -0.025em;
       margin-bottom: 0.75rem;
-      color: #fff;
+      color: #0f172a;
     }
     .section-header p {
       color: var(--text-muted);
-      font-size: 1.1rem;
+      font-size: 1.15rem;
     }
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-      gap: 1.5rem;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 1.75rem;
     }
     .feature-card {
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 1.75rem;
+      padding: 1.85rem;
+      box-shadow: var(--shadow-sm);
       transition: all 0.2s ease;
       position: relative;
     }
     .feature-card:hover {
-      background: var(--bg-card-hover);
-      border-color: rgba(56, 189, 248, 0.3);
+      border-color: var(--accent);
       transform: translateY(-3px);
+      box-shadow: var(--shadow-lg);
     }
     .card-icon {
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
-      background: rgba(56, 189, 248, 0.1);
-      border: 1px solid rgba(56, 189, 248, 0.2);
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: var(--accent-light);
+      border: 1px solid rgba(2, 132, 199, 0.2);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.35rem;
-      margin-bottom: 1.15rem;
+      font-size: 1.45rem;
+      margin-bottom: 1.25rem;
       color: var(--accent);
     }
     .feature-card h3 {
       font-size: 1.25rem;
-      font-weight: 700;
+      font-weight: 800;
       margin-bottom: 0.65rem;
-      color: #fff;
+      color: #0f172a;
     }
     .feature-card p {
       color: var(--text-muted);
@@ -400,21 +559,23 @@
       margin-bottom: 1rem;
     }
     .feature-snippet {
-      background: var(--bg-term);
+      background: #f1f5f9;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 0.75rem 0.9rem;
       font-family: var(--font-mono);
       font-size: 0.85rem;
-      color: var(--accent-green);
+      color: #0f172a;
       overflow-x: auto;
+      font-weight: 600;
     }
 
     /* Comparison Table / Box */
     .comparison-container {
-      background: var(--bg-card);
+      background: #ffffff;
       border: 1px solid var(--border);
       border-radius: 16px;
+      box-shadow: var(--shadow-md);
       overflow: hidden;
       margin-top: 2rem;
     }
@@ -426,8 +587,8 @@
     .comparison-row:last-child { border-bottom: none; }
     .col-header {
       padding: 1rem 1.5rem;
-      background: rgba(18, 20, 28, 0.8);
-      font-weight: 700;
+      background: #f8fafc;
+      font-weight: 800;
       font-size: 0.95rem;
       letter-spacing: 0.03em;
       text-transform: uppercase;
@@ -436,11 +597,12 @@
     .col-header.col-otto {
       color: var(--accent);
       border-left: 1px solid var(--border);
+      background: #f0f9ff;
     }
     .comp-cell {
-      padding: 1.25rem 1.5rem;
+      padding: 1.35rem 1.5rem;
       font-family: var(--font-mono);
-      font-size: 0.88rem;
+      font-size: 0.9rem;
       line-height: 1.6;
       display: flex;
       flex-direction: column;
@@ -448,74 +610,77 @@
     }
     .comp-cell.comp-otto {
       border-left: 1px solid var(--border);
-      background: rgba(56, 189, 248, 0.02);
+      background: #f8fafc;
     }
     .comp-label {
       font-family: var(--font-sans);
-      font-size: 0.75rem;
-      font-weight: 600;
+      font-size: 0.78rem;
+      font-weight: 700;
       text-transform: uppercase;
       color: var(--text-dim);
-      margin-bottom: 0.4rem;
+      margin-bottom: 0.45rem;
     }
 
     /* Quickstart Block */
     .quickstart-box {
-      background: linear-gradient(135deg, rgba(18, 20, 28, 0.9) 0%, rgba(13, 14, 21, 0.95) 100%);
+      background: #ffffff;
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 2.5rem;
-      max-width: 860px;
+      padding: 3rem 2.5rem;
+      max-width: 880px;
       margin: 0 auto;
       text-align: center;
+      box-shadow: var(--shadow-lg);
     }
     .quickstart-box h2 {
-      font-size: 2rem;
+      font-size: 2.15rem;
       font-weight: 800;
       margin-bottom: 0.75rem;
-      color: #fff;
+      color: #0f172a;
     }
     .quickstart-box p {
       color: var(--text-muted);
       margin-bottom: 1.75rem;
+      font-size: 1.05rem;
     }
     .install-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background: var(--bg-term);
+      background: #0f172a;
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 0.85rem 1.25rem;
+      padding: 0.95rem 1.25rem;
       font-family: var(--font-mono);
       font-size: 0.95rem;
-      color: var(--accent);
-      margin-bottom: 1.5rem;
+      color: #38bdf8;
+      margin-bottom: 1.75rem;
       text-align: left;
+      box-shadow: var(--shadow-sm);
     }
-    .copy-btn {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      color: var(--text-muted);
-      padding: 0.4rem 0.8rem;
+    .copy-btn-main {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+      padding: 0.45rem 0.9rem;
       border-radius: 6px;
-      font-size: 0.8rem;
+      font-size: 0.85rem;
       cursor: pointer;
-      font-weight: 600;
+      font-weight: 700;
       transition: all 0.15s ease;
     }
-    .copy-btn:hover { color: #fff; background: var(--border); }
+    .copy-btn-main:hover { background: #38bdf8; color: #040914; }
 
     /* Footer */
     footer {
       border-top: 1px solid var(--border);
       padding: 3.5rem 1.5rem;
-      background: var(--bg);
+      background: #ffffff;
       color: var(--text-dim);
-      font-size: 0.9rem;
+      font-size: 0.92rem;
     }
     .footer-container {
-      max-width: 1200px;
+      max-width: 1240px;
       margin: 0 auto;
       display: flex;
       flex-wrap: wrap;
@@ -530,8 +695,8 @@
     .footer-brand a {
       color: var(--text);
       text-decoration: none;
-      font-weight: 700;
-      font-size: 1.15rem;
+      font-weight: 800;
+      font-size: 1.25rem;
     }
     .footer-links {
       display: flex;
@@ -541,12 +706,15 @@
     .footer-links a {
       color: var(--text-muted);
       text-decoration: none;
+      font-weight: 600;
       transition: color 0.15s ease;
     }
     .footer-links a:hover { color: var(--accent); }
 
-    @media (max-width: 768px) {
-      .hero h1 { font-size: 2.45rem; }
+    @media (max-width: 900px) {
+      .explorer-grid { grid-template-columns: 1fr; }
+      .example-list { max-height: 280px; border-right: none; border-bottom: 1px solid var(--border); }
+      .hero h1 { font-size: 2.5rem; }
       .cta-group { flex-direction: column; width: 100%; }
       .btn-primary, .btn-secondary { width: 100%; text-align: center; }
       .comparison-row { grid-template-columns: 1fr; }
@@ -557,7 +725,7 @@
 </head>
 <body>
 
-  <div class="glow-bg"></div>
+  <div class="bg-grid"></div>
 
   <!-- Header -->
   <header>
@@ -567,8 +735,8 @@
         <span>otto</span>
       </a>
       <ul class="nav-links">
+        <li><a href="#interactive-explorer">Interactive Explorer</a></li>
         <li><a href="#features">Features</a></li>
-        <li><a href="#terminal-tour">Interactive Tour</a></li>
         <li><a href="#comparison">Comparison</a></li>
         <li><a href="#quickstart">Quick Start</a></li>
         <li><a href="https://github.com/xyzzyapps/otto/blob/main/TUTORIAL.md" target="_blank">Tutorial</a></li>
@@ -595,33 +763,51 @@
 
     <div class="cta-group">
       <a href="#quickstart" class="btn-primary">Get Started in 10s</a>
-      <a href="#terminal-tour" class="btn-secondary">Explore Interactive Tour</a>
+      <a href="#interactive-explorer" class="btn-secondary">Explore Interactive Playground</a>
+    </div>
+  </section>
+
+  <!-- Interactive Explorer Section -->
+  <section class="explorer-section" id="interactive-explorer">
+    <div class="explorer-header">
+      <div>
+        <h2>Interactive Examples Explorer</h2>
+        <p>Select any example below or click Next/Prev to test realistic one-liner streams in action.</p>
+      </div>
+      <div class="explorer-nav">
+        <span class="example-counter" id="example-counter">1 of 10</span>
+        <button class="nav-arrow-btn" onclick="prevExample()">&#9664; Prev</button>
+        <button class="nav-arrow-btn" onclick="nextExample()">Next &#9654;</button>
+      </div>
     </div>
 
-    <!-- Interactive Terminal Hero Component -->
-    <div class="terminal-wrapper" id="terminal-tour">
-      <div class="terminal-tabs">
-        <button class="tab-btn active" onclick="switchTab(0)">⚡ Stream Processing</button>
-        <button class="tab-btn" onclick="switchTab(1)">🌐 REST & JSON Streams</button>
-        <button class="tab-btn" onclick="switchTab(2)">🛡️ Dry-Run & Undo</button>
-        <button class="tab-btn" onclick="switchTab(3)">📊 SQLite Pushdown</button>
-        <button class="tab-btn" onclick="switchTab(4)">⏱️ Benchmarking</button>
-        <button class="tab-btn" onclick="switchTab(5)">👀 Watch & Rebuild</button>
+    <div class="explorer-grid">
+      <!-- Left Column: Full Clickable Example Menu -->
+      <div class="example-list" id="example-list">
+        <!-- Rendered by JS -->
       </div>
 
-      <div class="terminal-window">
+      <!-- Right Column: Live Terminal Simulator -->
+      <div class="terminal-pane">
         <div class="terminal-titlebar">
           <div class="window-controls">
             <span class="dot-ctrl dot-red"></span>
             <span class="dot-ctrl dot-yellow"></span>
             <span class="dot-ctrl dot-green"></span>
           </div>
-          <span class="terminal-title">otto — 80&times;24</span>
-          <span style="width: 40px;"></span>
+          <span class="terminal-title" id="terminal-example-title">1. Implicit Stdin Pipeline Loop (-n)</span>
+          <div class="term-actions">
+            <button class="btn-run" onclick="runCurrentExample()">&#9654; Run</button>
+            <button class="btn-copy" onclick="copyCurrentExample()">&#128203; Copy</button>
+          </div>
         </div>
 
         <div class="terminal-body" id="terminal-content">
-          <!-- Injected via JavaScript -->
+          <!-- Rendered by JS -->
+        </div>
+
+        <div class="explanation-box" id="explanation-content">
+          <!-- Rendered by JS -->
         </div>
       </div>
     </div>
@@ -722,7 +908,7 @@
         </div>
         <div class="comp-cell comp-otto">
           <div class="comp-label">otto English Stream</div>
-          <code style="color: var(--accent);">before: 0 into s. every line "scores.txt": add 2nd number into s. after: print s.</code>
+          <code style="color: var(--accent); font-weight: 700;">before: 0 into s. every line "scores.txt": add 2nd number into s. after: print s.</code>
         </div>
       </div>
 
@@ -734,7 +920,7 @@
         </div>
         <div class="comp-cell comp-otto">
           <div class="comp-label">otto Possessive Stream</div>
-          <code style="color: var(--accent);">fetch "https://api.io/users" json, take where each's age &gt; 21, print first's name.</code>
+          <code style="color: var(--accent); font-weight: 700;">fetch "https://api.io/users" json, take where each's age &gt; 21, print first's name.</code>
         </div>
       </div>
 
@@ -746,7 +932,7 @@
         </div>
         <div class="comp-cell comp-otto">
           <div class="comp-label">otto Transactional In-Place</div>
-          <code style="color: var(--accent);">every file "*.conf": inplace replace "8080" "9090".<br># Revert anytime: undo last.</code>
+          <code style="color: var(--accent); font-weight: 700;">every file "*.conf": inplace replace "8080" "9090".<br># Revert anytime: undo last.</code>
         </div>
       </div>
 
@@ -758,7 +944,7 @@
         </div>
         <div class="comp-cell comp-otto">
           <div class="comp-label">otto Tally Grid</div>
-          <code style="color: var(--accent);">read "access.log", tally, table.</code>
+          <code style="color: var(--accent); font-weight: 700;">read "access.log", tally, table.</code>
         </div>
       </div>
     </div>
@@ -772,7 +958,7 @@
 
       <div class="install-bar">
         <span>zig cc -Isrc -Ivendor/sqlite3 src/*.c vendor/sqlite3/libsqlite3.a -lwininet -o otto.exe</span>
-        <button class="copy-btn" onclick="copyInstall()">Copy</button>
+        <button class="copy-btn-main" onclick="copyInstall()">Copy</button>
       </div>
 
       <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
@@ -791,8 +977,8 @@
         <p>&copy; 2026 Xyzzy Apps. All rights reserved.</p>
       </div>
       <ul class="footer-links">
+        <li><a href="#interactive-explorer">Interactive Explorer</a></li>
         <li><a href="#features">Features</a></li>
-        <li><a href="#terminal-tour">Interactive Tour</a></li>
         <li><a href="#comparison">Comparison</a></li>
         <li><a href="https://github.com/xyzzyapps/otto/blob/main/TUTORIAL.md" target="_blank">Tutorial</a></li>
         <li><a href="https://github.com/xyzzyapps/otto" target="_blank">GitHub</a></li>
@@ -801,81 +987,204 @@
   </footer>
 
   <script>
-    const snippets = [
+    const examples = [
       {
-        prompt: "otto ~/logs (main) [11ms] > ",
-        cmd: 'cat access.log | otto -n -c \'<span class="syn-verb">print</span> <span class="syn-ord">1st</span> <span class="syn-noun">word</span>.\'',
-        ghost: "",
-        output: "192.168.1.10\n192.168.1.15\n10.0.0.42\n10.0.0.88"
+        id: "stdin-loop",
+        tag: "PERL -N",
+        title: "Implicit Stdin Stream (-n)",
+        desc: "Stream standard input line-by-line automatically without loop boilerplate.",
+        promptDir: "~/logs",
+        cmdRaw: "cat access.log | otto -n -c 'print 1st word.'",
+        cmdHtml: 'cat access.log | otto -n -c \'<span class="syn-verb">print</span> <span class="syn-ord">1st</span> <span class="syn-noun">word</span>.\'',
+        output: "192.168.1.10\n192.168.1.15\n10.0.0.42\n10.0.0.88",
+        explain: "The -n flag automatically wraps the sentence in an implicit loop over incoming standard input lines. 1st word lazily splits the active line into fields."
       },
       {
-        prompt: "otto ~/api (main) [85ms] > ",
-        cmd: '<span class="syn-verb">fetch</span> <span class="syn-str">"https://api/users"</span> <span class="syn-noun">json</span><span class="syn-pipe">,</span> <span class="syn-verb">sort</span> <span class="syn-noun">age</span> <span class="syn-adv">descending</span><span class="syn-pipe">,</span> <span class="syn-verb">print</span> <span class="syn-ord">first</span>\'s <span class="syn-noun">name</span>.',
-        ghost: "",
-        output: "Bob"
+        id: "rest-json",
+        tag: "CURL + JQ",
+        title: "REST Stream & Possessive JSON",
+        desc: "Fetch JSON endpoints, sort by object properties, and extract values.",
+        promptDir: "~/api",
+        cmdRaw: 'otto -c \'fetch "https://api/users" json, sort age descending, print first\'s name.\'',
+        cmdHtml: 'otto -c \'<span class="syn-verb">fetch</span> <span class="syn-str">"https://api/users"</span> <span class="syn-noun">json</span><span class="syn-pipe">,</span> <span class="syn-verb">sort</span> <span class="syn-noun">age</span> <span class="syn-adv">descending</span><span class="syn-pipe">,</span> <span class="syn-verb">print</span> <span class="syn-ord">first</span>\'s <span class="syn-noun">name</span>.\'',
+        output: "Bob",
+        explain: "fetch pulls the HTTP payload directly into an in-memory JSON array. sort reorders by property 'age'. Possessive first's name extracts the field."
       },
       {
-        prompt: "otto ~/deploy (main) [14ms] > ",
-        cmd: '<span class="syn-verb">every</span> <span class="syn-noun">file</span> <span class="syn-str">"*.conf"</span>: <span class="syn-adv">simulate</span> <span class="syn-adv">inplace</span> <span class="syn-verb">replace</span> <span class="syn-str">"8080"</span> <span class="syn-str">"9090"</span>.',
-        ghost: "",
-        output: "--- server.conf (simulation)\n+++ server.conf (simulation)\n@@ -12,3 +12,3 @@\n-port = 8080\n+port = 9090\n[Dry run complete: 0 bytes written to disk. Run without simulate to apply.]"
+        id: "dryrun-undo",
+        tag: "SAFETY",
+        title: "Dry-Run Simulation & Undo",
+        desc: "Preview batch replacements as unified diffs and roll back anytime.",
+        promptDir: "~/deploy",
+        cmdRaw: 'otto -c \'every file "*.conf": simulate inplace replace "8080" "9090".\'',
+        cmdHtml: 'otto -c \'<span class="syn-verb">every</span> <span class="syn-noun">file</span> <span class="syn-str">"*.conf"</span>: <span class="syn-adv">simulate</span> <span class="syn-adv">inplace</span> <span class="syn-verb">replace</span> <span class="syn-str">"8080"</span> <span class="syn-str">"9090"</span>.\'',
+        output: "--- server.conf (simulation)\n+++ server.conf (simulation)\n@@ -12,3 +12,3 @@\n-port = 8080\n+port = 9090\n[Dry run complete: 0 bytes written to disk. Run without simulate to apply.]",
+        explain: "simulate displays an in-memory diff without touching disk. When run without simulate, original files are saved in ~/.otto/journal for one-word recovery via 'undo last'."
       },
       {
-        prompt: "otto ~/data (main) [6ms] > ",
-        cmd: '<span class="syn-verb">every</span> <span class="syn-noun">row</span> <span class="syn-str">"ops.db:metrics"</span> <span class="syn-adv">where</span> <span class="syn-noun">cpu</span> &gt;= 80: <span class="syn-verb">print</span> <span class="syn-noun">host</span>.',
-        ghost: "",
-        output: "prod-web-01\nprod-api-03"
+        id: "sqlite-pushdown",
+        tag: "SQLITE",
+        title: "Embedded SQLite Query Pushdown",
+        desc: "Query table rows with automatic SQL where clause pushdown.",
+        promptDir: "~/data",
+        cmdRaw: 'otto -c \'every row "ops.db:metrics" where cpu >= 80: print host.\'',
+        cmdHtml: 'otto -c \'<span class="syn-verb">every</span> <span class="syn-noun">row</span> <span class="syn-str">"ops.db:metrics"</span> <span class="syn-adv">where</span> <span class="syn-noun">cpu</span> &gt;= <span class="syn-num">80</span>: <span class="syn-verb">print</span> <span class="syn-noun">host</span>.\'',
+        output: "prod-web-01\nprod-api-03",
+        explain: "Directly queries the SQLite database file ops.db. The 'where cpu >= 80' predicate is compiled and pushed down into SQLite engine for index acceleration."
       },
       {
-        prompt: "otto ~/perf (main) [220ms] > ",
-        cmd: '<span class="syn-verb">benchmark</span> <span class="syn-num">10</span> <span class="syn-str">"git status"</span><span class="syn-pipe">,</span> <span class="syn-verb">table</span>.',
-        ghost: "",
-        output: "┌────────────┬──────────┬──────────┬──────────┬──────────┬────────┐\n│ command    │ runs     │ mean_ms  │ min_ms   │ max_ms   │ stddev │\n├────────────┼──────────┼──────────┼──────────┼──────────┼────────┤\n│ git status │ 10       │ 14.28    │ 12.10    │ 18.42    │ 1.84   │\n└────────────┴──────────┴──────────┴──────────┴──────────┴────────┘"
+        id: "benchmarking",
+        tag: "HYPERFINE",
+        title: "Statistical Benchmarking",
+        desc: "Run N trials, calculate mean, min, max, stddev, and render a table.",
+        promptDir: "~/perf",
+        cmdRaw: 'otto -c \'benchmark 10 "git status", table.\'',
+        cmdHtml: 'otto -c \'<span class="syn-verb">benchmark</span> <span class="syn-num">10</span> <span class="syn-str">"git status"</span><span class="syn-pipe">,</span> <span class="syn-verb">table</span>.\'',
+        output: "┌────────────┬──────────┬──────────┬──────────┬──────────┬────────┐\n│ command    │ runs     │ mean_ms  │ min_ms   │ max_ms   │ stddev │\n├────────────┼──────────┼──────────┼──────────┼──────────┼────────┤\n│ git status │ 10       │ 14.28    │ 12.10    │ 18.42    │ 1.84   │\n└────────────┴──────────┴──────────┴──────────┴──────────┴────────┘",
+        explain: "Replaces hyperfine. Runs 10 warm executions, computes sample variance, and passes structured records directly to the table verb for box-drawing output."
       },
       {
-        prompt: "otto ~/project (main) [3ms] > ",
-        cmd: '<span class="syn-verb">watch</span> <span class="syn-noun">file</span> <span class="syn-str">"src"</span>: <span class="syn-verb">run</span> <span class="syn-str">"zig build"</span>.',
-        ghost: "",
-        output: "[watching 'src/' for modifications... (Ctrl+C to quit)]\n[change detected: src/main.c] -> running 'zig build'\nBuild complete (0.12s)."
+        id: "pronoun-registers",
+        tag: "PRONOUNS",
+        title: "Pronoun Registers (that & them)",
+        desc: "Refer to split tokens with 'them' and prior sentences with 'that'.",
+        promptDir: "~/workspace",
+        cmdRaw: 'otto -c \'"cherry banana apple", split " ", sort them descending, print first.\'',
+        cmdHtml: 'otto -c \'<span class="syn-str">"cherry banana apple"</span><span class="syn-pipe">,</span> <span class="syn-verb">split</span> <span class="syn-str">" "</span><span class="syn-pipe">,</span> <span class="syn-verb">sort</span> <span class="syn-noun">them</span> <span class="syn-adv">descending</span><span class="syn-pipe">,</span> <span class="syn-verb">print</span> <span class="syn-ord">first</span>.\'',
+        output: "cherry",
+        explain: "'them' resolves to the active list created by split. In addition, 'that' carries forward the accumulator from the previous sentence across periods."
+      },
+      {
+        id: "tally-table",
+        tag: "MILLER",
+        title: "Frequency Tally & Terminal Grid",
+        desc: "Count frequency occurrences and render formatted Unicode grids.",
+        promptDir: "~/reports",
+        cmdRaw: 'otto -c \'read "fruits.txt", tally, table.\'',
+        cmdHtml: 'otto -c \'<span class="syn-verb">read</span> <span class="syn-str">"fruits.txt"</span><span class="syn-pipe">,</span> <span class="syn-verb">tally</span><span class="syn-pipe">,</span> <span class="syn-verb">table</span>.\'',
+        output: "┌────────────┬──────────┐\n│ value      │ count    │\n├────────────┼──────────┤\n│ apple      │ 42       │\n│ banana     │ 19       │\n│ orange     │ 11       │\n└────────────┴──────────┘",
+        explain: "Replaces 'sort | uniq -c'. Accumulates distinct string occurrences in an in-memory hash table, sorts by descending frequency, and formats a Unicode grid."
+      },
+      {
+        id: "file-watcher",
+        tag: "WATCHEXEC",
+        title: "File Watcher & Auto-Rebuild",
+        desc: "Watch directories recursively and trigger actions on modification.",
+        promptDir: "~/project",
+        cmdRaw: 'otto -c \'watch file "src": run "zig build".\'',
+        cmdHtml: 'otto -c \'<span class="syn-verb">watch</span> <span class="syn-noun">file</span> <span class="syn-str">"src"</span>: <span class="syn-verb">run</span> <span class="syn-str">"zig build"</span>.\'',
+        output: "[watching 'src/' for modifications... (Ctrl+C to quit)]\n[change detected: src/main.c] -> running 'zig build'\nBuild complete (0.12s).",
+        explain: "Replaces entr/watchexec. Uses native OS file notification hooks (ReadDirectoryChangesW on Windows / inotify on Linux) to execute commands on file modifications."
+      },
+      {
+        id: "fuzzy-killer",
+        tag: "FZF + PS",
+        title: "Interactive Fuzzy Process Killer",
+        desc: "Fuzzy filter system processes and terminate in a single sentence.",
+        promptDir: "~/sys",
+        cmdRaw: "otto -c 'every process: pick, kill.'",
+        cmdHtml: 'otto -c \'<span class="syn-verb">every</span> <span class="syn-noun">process</span>: <span class="syn-verb">pick</span><span class="syn-pipe">,</span> <span class="syn-verb">kill</span>.\'',
+        output: "[pick interactive UI: type to filter PID/name]\n> node (PID 14208) [ENTER to select]\n[Terminated PID 14208 (node.exe)]",
+        explain: "Enumerates processes, opens the built-in zero-dependency fuzzy picker, and pipes the chosen process map directly to the kill verb."
+      },
+      {
+        id: "self-bundler",
+        tag: "COMPILER",
+        title: "Single-Binary Self Bundler",
+        desc: "Self-compile scripts into portable, standalone native executables.",
+        promptDir: "~/tools",
+        cmdRaw: 'otto -c \'compile "app.otto" into "./app".\'',
+        cmdHtml: 'otto -c \'<span class="syn-verb">compile</span> <span class="syn-str">"app.otto"</span> <span class="syn-verb">into</span> <span class="syn-str">"./app"</span>.\'',
+        output: "[Compiled app.otto into standalone native binary ./app.exe]\n[Executable size: 2.9 MB. Zero external runtime dependencies.]",
+        explain: "Embeds compiled 64-bit bytecode directly into the executable footer with magic header OTTO1. The resulting binary runs independently on machines without otto installed."
       }
     ];
 
-    function renderTerminal(index) {
-      const data = snippets[index];
+    let currentIndex = 0;
+
+    function renderExampleList() {
+      const container = document.getElementById("example-list");
+      container.innerHTML = examples.map((ex, idx) => `
+        <div class="example-item ${idx === currentIndex ? 'active' : ''}" onclick="selectExample(${idx})">
+          <div class="item-top">
+            <span class="item-title">${idx + 1}. ${ex.title}</span>
+            <span class="item-tag">${ex.tag}</span>
+          </div>
+          <span class="item-desc">${ex.desc}</span>
+        </div>
+      `).join("");
+    }
+
+    function renderActiveExample() {
+      const ex = examples[currentIndex];
+      document.getElementById("example-counter").textContent = `${currentIndex + 1} of ${examples.length}`;
+      document.getElementById("terminal-example-title").textContent = `${currentIndex + 1}. ${ex.title}`;
+
       const term = document.getElementById("terminal-content");
       term.innerHTML = `
         <div class="prompt-line">
           <span class="prompt-badge">otto</span>
-          <span class="prompt-dir">~/workspace</span>
+          <span class="prompt-dir">${ex.promptDir}</span>
           <span class="prompt-branch">(main)</span>
           <span class="prompt-time">[14ms]</span>
           <span class="prompt-char">&gt;</span>
-          <span class="command-text">${data.cmd}</span>
-          <span class="ghost-text">${data.ghost}</span>
+          <span class="command-text">${ex.cmdHtml}</span>
         </div>
-        <div class="terminal-output">${data.output}</div>
+        <div class="terminal-output">${ex.output}</div>
       `;
+
+      const exp = document.getElementById("explanation-content");
+      exp.innerHTML = `
+        <span class="explanation-title">How it works in otto:</span>
+        <div>${ex.explain}</div>
+      `;
+
+      renderExampleList();
     }
 
-    function switchTab(index) {
-      const tabs = document.querySelectorAll(".tab-btn");
-      tabs.forEach((tab, i) => {
-        if (i === index) tab.classList.add("active");
-        else tab.classList.remove("active");
-      });
-      renderTerminal(index);
+    function selectExample(index) {
+      currentIndex = index;
+      renderActiveExample();
+    }
+
+    function nextExample() {
+      currentIndex = (currentIndex + 1) % examples.length;
+      renderActiveExample();
+    }
+
+    function prevExample() {
+      currentIndex = (currentIndex - 1 + examples.length) % examples.length;
+      renderActiveExample();
+    }
+
+    function runCurrentExample() {
+      const termOutput = document.querySelector(".terminal-output");
+      if (termOutput) {
+        termOutput.style.opacity = "0";
+        setTimeout(() => {
+          termOutput.style.opacity = "1";
+        }, 150);
+      }
+    }
+
+    function copyCurrentExample() {
+      const ex = examples[currentIndex];
+      navigator.clipboard.writeText(ex.cmdRaw);
+      const btn = document.querySelector(".btn-copy");
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.innerHTML = "&#128203; Copy"; }, 1500);
     }
 
     function copyInstall() {
       const text = "zig cc -Isrc -Ivendor/sqlite3 src/*.c vendor/sqlite3/libsqlite3.a -lwininet -o otto.exe";
       navigator.clipboard.writeText(text);
-      const btn = document.querySelector(".copy-btn");
+      const btn = document.querySelector(".copy-btn-main");
       btn.textContent = "Copied!";
       setTimeout(() => { btn.textContent = "Copy"; }, 2000);
     }
 
-    // Initialize first tab
-    renderTerminal(0);
+    // Initialize
+    renderActiveExample();
   </script>
 </body>
 </html>

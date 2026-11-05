@@ -1,0 +1,802 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <sys/stat.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <direct.h>
+#define mkdir_p(d) _mkdir(d)
+#define sleep_ms(ms) Sleep(ms)
+#define popen_cmd(c) _popen(c, "r")
+#define pclose_cmd(p) _pclose(p)
+#else
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#define mkdir_p(d) mkdir(d, 0755)
+#define sleep_ms(ms) usleep((ms) * 1000)
+#define popen_cmd(c) popen(c, "r")
+#define pclose_cmd(p) pclose(p)
+#endif
+
+static int g_passed = 0;
+static int g_total = 0;
+static char g_bin[256] = "";
+
+// ---------------------------------------------------------
+// Helper Utilities
+// ---------------------------------------------------------
+
+static bool file_exists(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+static bool write_file(const char *path, const char *content) {
+    FILE *fp = fopen(path, "w");
+    if (!fp) return false;
+    fputs(content, fp);
+    fclose(fp);
+    return true;
+}
+
+static bool write_binary_file(const char *path, const uint8_t *data, size_t len) {
+    FILE *fp = fopen(path, "wb");
+    if (!fp) return false;
+    fwrite(data, 1, len, fp);
+    fclose(fp);
+    return true;
+}
+
+static char *read_file(const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return NULL;
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    char *buf = (char *)malloc(sz + 1);
+    if (!buf) { fclose(fp); return NULL; }
+    fread(buf, 1, sz, fp);
+    buf[sz] = '\0';
+    fclose(fp);
+    return buf;
+}
+
+static void remove_file(const char *path) {
+    remove(path);
+}
+
+static void trim_str(char *s) {
+    if (!s) return;
+    size_t len = strlen(s);
+    while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t' || s[len - 1] == '\r' || s[len - 1] == '\n')) {
+        s[--len] = '\0';
+    }
+    char *p = s;
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+    if (p != s) {
+        memmove(s, p, strlen(p) + 1);
+    }
+}
+
+static char *run_cmd(const char *cmd, int *exit_code) {
+    FILE *fp = popen_cmd(cmd);
+    if (!fp) {
+        if (exit_code) *exit_code = -1;
+        return strdup("");
+    }
+    size_t cap = 4096;
+    size_t len = 0;
+    char *buf = (char *)malloc(cap);
+    char chunk[512];
+    while (fgets(chunk, sizeof(chunk), fp)) {
+        size_t clen = strlen(chunk);
+        if (len + clen >= cap) {
+            cap *= 2;
+            buf = (char *)realloc(buf, cap);
+        }
+        memcpy(buf + len, chunk, clen);
+        len += clen;
+    }
+    buf[len] = '\0';
+    int rc = pclose_cmd(fp);
+    if (exit_code) *exit_code = rc;
+    return buf;
+}
+
+static void run_test(const char *name, bool (*fn)(char *err, size_t err_sz)) {
+    g_total++;
+    printf("\n\033[33mTest %d: %s\033[0m\n", g_total, name);
+    char err[512] = "";
+    if (fn(err, sizeof(err))) {
+        printf("  \033[32m-> PASSED\033[0m\n");
+        g_passed++;
+    } else {
+        printf("  \033[31m-> FAILED: %s\033[0m\n", err[0] ? err : "assertion failed");
+    }
+}
+
+// ---------------------------------------------------------
+// Master Specification Tests (14 Tests)
+// ---------------------------------------------------------
+
+// Test 1: Zero-filler recursion & TCO
+static bool test_tco_gcd(char *err, size_t err_sz) {
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"gcd a b: return a if b == 0 else gcd b (a %% b). print gcd 1071 462.\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    trim_str(out);
+    bool ok = (strcmp(out, "21") == 0);
+    if (!ok) snprintf(err, err_sz, "Expected 21, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 2: TCO Deep Recursion
+static bool test_tco_deep(char *err, size_t err_sz) {
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"count_down n: return 0 if n <= 0 else count_down (n - 1). print count_down 1000000.\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    trim_str(out);
+    bool ok = (strcmp(out, "0") == 0);
+    if (!ok) snprintf(err, err_sz, "Expected 0, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 3: AWK lifecycle + ordinal + implicit number scanner
+static bool test_awk_lifecycle(char *err, size_t err_sz) {
+    write_file("scores.txt", "alice 100 math\nbob 90 science\ncharlie 80 history\n");
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"before: 0 into s. every line \\\"scores.txt\\\": add 2nd number into s. after: print s.\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("scores.txt");
+    trim_str(out);
+    bool ok = (strcmp(out, "270") == 0);
+    if (!ok) snprintf(err, err_sz, "Expected 270, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 4: Possessive JSON navigation + sorting
+static bool test_json_nav(char *err, size_t err_sz) {
+    const char *json_data = "[\n"
+        "  {\"name\": \"Alice\", \"age\": 25, \"active\": true},\n"
+        "  {\"name\": \"Bob\", \"age\": 40, \"active\": true},\n"
+        "  {\"name\": \"Charlie\", \"age\": 30, \"active\": false},\n"
+        "  {\"name\": \"David\", \"age\": 35, \"active\": true}\n"
+        "]";
+    write_file("users.json", json_data);
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"read \\\"users.json\\\" json, take where each's active == true, sort by age descending, print each's name.\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("users.json");
+
+    // Output should contain Bob, David, Alice in order
+    char *b = strstr(out, "Bob");
+    char *d = strstr(out, "David");
+    char *a = strstr(out, "Alice");
+    bool ok = (b && d && a && (b < d) && (d < a));
+    if (!ok) snprintf(err, err_sz, "Expected sorted Bob, David, Alice; got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 5: Parallel tee (and) + short-circuit (or)
+static bool test_and_or_tee(char *err, size_t err_sz) {
+    write_file("backup.cfg", "line one: host=web1\nline two: port=8080\nline three: debug=true\n");
+    remove_file("primary.cfg");
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"read \\\"primary.cfg\\\" or read \\\"backup.cfg\\\", print first line and print count lines.\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("backup.cfg");
+
+    bool ok = (strstr(out, "line one: host=web1") != NULL && strstr(out, "3") != NULL);
+    if (!ok) snprintf(err, err_sz, "Expected 'line one: host=web1' and '3', got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 6: In-place dry-run & transactional rollback
+static bool test_simulate_inplace_undo(char *err, size_t err_sz) {
+    write_file("doc.txt", "hello foo world");
+    char cmd[512];
+
+    // 6.1 simulate: dry-run without disk modification
+    snprintf(cmd, sizeof(cmd), "%s -c \"every file \\\"*.txt\\\": simulate inplace replace \\\"foo\\\" with \\\"bar\\\".\"", g_bin);
+    char *out1 = run_cmd(cmd, NULL);
+    free(out1);
+    char *c1 = read_file("doc.txt");
+    if (!c1 || strcmp(c1, "hello foo world") != 0) {
+        snprintf(err, err_sz, "Dry-run modified file! Content: %s", c1 ? c1 : "NULL");
+        if (c1) free(c1);
+        remove_file("doc.txt");
+        return false;
+    }
+    free(c1);
+
+    // 6.2 inplace: modify for real with auto-journal
+    snprintf(cmd, sizeof(cmd), "%s -c \"every file \\\"*.txt\\\": inplace replace \\\"foo\\\" with \\\"bar\\\".\"", g_bin);
+    char *out2 = run_cmd(cmd, NULL);
+    free(out2);
+    char *c2 = read_file("doc.txt");
+    if (!c2 || strcmp(c2, "hello bar world") != 0) {
+        snprintf(err, err_sz, "Inplace replace failed! Content: %s", c2 ? c2 : "NULL");
+        if (c2) free(c2);
+        remove_file("doc.txt");
+        return false;
+    }
+    free(c2);
+
+    // 6.3 undo: restore original
+    snprintf(cmd, sizeof(cmd), "%s -c \"undo last.\"", g_bin);
+    char *out3 = run_cmd(cmd, NULL);
+    free(out3);
+    char *c3 = read_file("doc.txt");
+    remove_file("doc.txt");
+    if (!c3 || strcmp(c3, "hello foo world") != 0) {
+        snprintf(err, err_sz, "Undo rollback failed! Content: %s", c3 ? c3 : "NULL");
+        if (c3) free(c3);
+        return false;
+    }
+    free(c3);
+    return true;
+}
+
+// Test 7: Relational set operations
+static bool test_relational_sets(char *err, size_t err_sz) {
+    write_file("candidates.txt", "alice\nbob\ncharlie\ndavid\n");
+    write_file("blacklist.txt", "bob\n");
+    write_file("verified.txt", "alice\ndavid\neva\n");
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"exclude \\\"blacklist.txt\\\" from \\\"candidates.txt\\\", intersect with \\\"verified.txt\\\", print count.\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("candidates.txt");
+    remove_file("blacklist.txt");
+    remove_file("verified.txt");
+    trim_str(out);
+
+    bool ok = (strcmp(out, "2") == 0);
+    if (!ok) snprintf(err, err_sz, "Expected count 2, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 8: Binary unpacking
+static bool test_binary_unpack(char *err, size_t err_sz) {
+    uint8_t bytes[8] = { 0x78, 0x56, 0x34, 0x12, 0x01, 0x02, 0x00, 0x00 };
+    write_binary_file("sample.bin", bytes, sizeof(bytes));
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"read \\\"sample.bin\\\", take first 8 bytes, unpack \\\"u32 u8 u8\\\" into magic bits endian, print magic.\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("sample.bin");
+    trim_str(out);
+
+    bool ok = (strcmp(out, "305419896") == 0);
+    if (!ok) snprintf(err, err_sz, "Expected 305419896, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 9: Incremental build rule
+static bool test_incremental_build(char *err, size_t err_sz) {
+    write_file("hello.c", "int main() { return 0; }\n");
+    remove_file("hello.exe");
+    remove_file("hello");
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"\\\"hello\\\" from \\\"hello.c\\\": run \\\"zig cc hello.c -o hello.exe\\\".\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    free(out);
+
+    bool exists = file_exists("hello.exe") || file_exists("hello");
+    remove_file("hello.c");
+    remove_file("hello.exe");
+    remove_file("hello.pdb");
+    remove_file("hello");
+
+    if (!exists) {
+        snprintf(err, err_sz, "Incremental build rule failed to produce hello.exe");
+        return false;
+    }
+    return true;
+}
+
+// Test 10: Embedded SQLite stream
+static bool test_sqlite_stream(char *err, size_t err_sz) {
+    remove_file("ops.db");
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"write {host: \\\"web1\\\", cpu: 85} onto \\\"ops.db:metrics\\\". every row \\\"ops.db:metrics\\\" where cpu >= 80: print host.\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("ops.db");
+    trim_str(out);
+
+    bool ok = (strcmp(out, "web1") == 0);
+    if (!ok) snprintf(err, err_sz, "Expected 'web1', got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 11: Standalone binary compilation
+static bool test_standalone_compilation(char *err, size_t err_sz) {
+    write_file("test.otto", "print \"Hello from standalone compiled binary!\".\n");
+    remove_file("test-bin");
+    remove_file("test-bin.exe");
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"compile \\\"test.otto\\\" into \\\"./test-bin\\\", run \\\"./test-bin\\\", print.\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("test.otto");
+    remove_file("test-bin");
+    remove_file("test-bin.exe");
+    trim_str(out);
+
+    bool ok = (strcmp(out, "Hello from standalone compiled binary!") == 0);
+    if (!ok) snprintf(err, err_sz, "Expected standalone binary output, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 12: Native YAML stream processing
+static bool test_yaml_processing(char *err, size_t err_sz) {
+    const char *yaml_data = "name: ProductionCluster\nport: 9000\nnodes: 16\n";
+    write_file("cluster.yaml", yaml_data);
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"read \\\"cluster.yaml\\\" yaml, print.\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("cluster.yaml");
+
+    bool ok = (strstr(out, "ProductionCluster") != NULL && strstr(out, "9000") != NULL);
+    if (!ok) snprintf(err, err_sz, "Expected parsed YAML map, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 13: Strict Zero-Filler Rule Rejection
+static bool test_zero_filler_rejection(char *err, size_t err_sz) {
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"To gcd of a and b.\" 2>&1", g_bin);
+    char *out = run_cmd(cmd, NULL);
+
+    bool ok = (strstr(out, "zero-filler") != NULL || strstr(out, "Syntax error") != NULL);
+    if (!ok) snprintf(err, err_sz, "Expected zero-filler syntax rejection, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 14: TUI Table Grid Rendering
+static bool test_tui_table(char *err, size_t err_sz) {
+    const char *json_data = "[\n  {\"name\": \"Alice\", \"age\": 25},\n  {\"name\": \"Bob\", \"age\": 40}\n]\n";
+    write_file("users.json", json_data);
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s -c \"read \\\"users.json\\\" json, table.\"", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("users.json");
+
+    bool ok = (strstr(out, "+") != NULL && strstr(out, "Alice") != NULL && strstr(out, "Bob") != NULL);
+    if (!ok) snprintf(err, err_sz, "Expected table grid with Alice and Bob, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// ---------------------------------------------------------
+// Modern CLI Capabilities Tests (7 Tests)
+// ---------------------------------------------------------
+
+// Test 15: Native HTTP REST Streams (fetch GET & onto POST)
+static bool test_http_rest(char *err, size_t err_sz) {
+    // 15.1 fetch GET
+    write_file("test_fetch.otto", "fetch \"https://jsonplaceholder.typicode.com/todos/1\" json, print each's title.\n");
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s test_fetch.otto", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    remove_file("test_fetch.otto");
+    trim_str(out1);
+
+    if (strcmp(out1, "delectus aut autem") != 0) {
+        snprintf(err, err_sz, "fetch GET failed: expected 'delectus aut autem', got '%s'", out1);
+        free(out1);
+        return false;
+    }
+    free(out1);
+
+    // 15.2 onto POST
+    write_file("test_post.otto", "write {status: \"ok\", service: \"otto\"} onto \"https://httpbin.org/post\", print.\n");
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s test_post.otto", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+    remove_file("test_post.otto");
+
+    bool ok = (strstr(out2, "otto") != NULL && strstr(out2, "httpbin.org") != NULL);
+    if (!ok) snprintf(err, err_sz, "HTTP POST onto failed, got '%s'", out2);
+    free(out2);
+    return ok;
+}
+
+// Test 16: File Change Watcher Loop (watch Hook)
+static bool test_file_watcher(char *err, size_t err_sz) {
+    mkdir_p("test_watch_dir");
+    write_file("test_watch_dir/code.txt", "v1");
+    write_file("test_watch.otto", "watch file \"test_watch_dir\": print \"watch_tick\".\n");
+    remove_file("watch.log");
+
+#ifdef _WIN32
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+    HANDLE hLog = CreateFileA("watch.log", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+
+    si.dwFlags |= STARTF_USESTDHANDLES;
+    si.hStdOutput = hLog;
+    si.hStdError = hLog;
+
+    char cmdline[512];
+    snprintf(cmdline, sizeof(cmdline), "%s test_watch.otto", g_bin);
+
+    if (CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+        sleep_ms(600);
+        write_file("test_watch_dir/code.txt", "v2");
+        sleep_ms(800);
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+    CloseHandle(hLog);
+#else
+    pid_t pid = fork();
+    if (pid == 0) {
+        freopen("watch.log", "w", stdout);
+        freopen("watch.log", "w", stderr);
+        execl(g_bin, g_bin, "test_watch.otto", (char *)NULL);
+        exit(1);
+    } else {
+        sleep_ms(600);
+        write_file("test_watch_dir/code.txt", "v2");
+        sleep_ms(800);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+    }
+#endif
+
+    char *log_content = read_file("watch.log");
+    remove_file("test_watch_dir/code.txt");
+    remove_file("test_watch.otto");
+    remove_file("watch.log");
+#ifdef _WIN32
+    _rmdir("test_watch_dir");
+#else
+    rmdir("test_watch_dir");
+#endif
+
+    bool ok = false;
+    if (log_content) {
+        char *first = strstr(log_content, "watch_tick");
+        if (first) {
+            char *second = strstr(first + 10, "watch_tick");
+            if (second) ok = true;
+        }
+    }
+
+    if (!ok) {
+        snprintf(err, err_sz, "Expected at least 2 watch ticks in log, got '%s'", log_content ? log_content : "NULL");
+    }
+    if (log_content) free(log_content);
+    return ok;
+}
+
+// Test 17: Frecency Smart Directory Navigation (jump Verb)
+static bool test_frecency_jump(char *err, size_t err_sz) {
+    write_file("test_jump.otto", "jump \"src\", print.\n");
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s test_jump.otto", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("test_jump.otto");
+    trim_str(out);
+
+    size_t len = strlen(out);
+    bool ok = (len >= 3 && (strcmp(out + len - 3, "src") == 0 ||
+               (len >= 4 && (strcmp(out + len - 4, "src/") == 0 || strcmp(out + len - 4, "src\\") == 0))));
+    if (!ok) snprintf(err, err_sz, "Expected path ending with src, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 18: Git-Aware Directory Scanning (tree & ignoring git)
+static bool test_git_tree_ignore(char *err, size_t err_sz) {
+    // 18.1 tree scanner
+    write_file("test_tree.otto", "read \"src\" tree, print.\n");
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s test_tree.otto", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    remove_file("test_tree.otto");
+
+    if (strstr(out1, "vm.c") == NULL || strstr(out1, "|--") == NULL) {
+        snprintf(err, err_sz, "Expected tree structure with vm.c, got '%s'", out1);
+        free(out1);
+        return false;
+    }
+    free(out1);
+
+    // 18.2 ignoring git
+    mkdir_p("test_git_dir");
+    mkdir_p("test_git_dir/.git");
+    write_file("test_git_dir/app.c", "int main(){}");
+    write_file("test_git_dir/.git/HEAD", "ref: refs/heads/main");
+    write_file("test_git.otto", "every ignoring git file \"test_git_dir/*\": print.\n");
+
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s test_git.otto", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+
+    remove_file("test_git_dir/app.c");
+    remove_file("test_git_dir/.git/HEAD");
+    remove_file("test_git.otto");
+#ifdef _WIN32
+    _rmdir("test_git_dir/.git");
+    _rmdir("test_git_dir");
+#else
+    rmdir("test_git_dir/.git");
+    rmdir("test_git_dir");
+#endif
+
+    bool ok = (strstr(out2, ".git") == NULL && strstr(out2, "app.c") != NULL);
+    if (!ok) snprintf(err, err_sz, "Expected app.c without .git, got '%s'", out2);
+    free(out2);
+    return ok;
+}
+
+// Test 19: Statistical Benchmarking (benchmark Verb)
+static bool test_benchmark(char *err, size_t err_sz) {
+    write_file("test_bm.otto", "benchmark 5 \"echo 1\", print.\n");
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s test_bm.otto", g_bin);
+    char *out = run_cmd(cmd, NULL);
+    remove_file("test_bm.otto");
+
+    bool ok = (strstr(out, "runs: 5") != NULL &&
+               strstr(out, "mean_ms:") != NULL &&
+               strstr(out, "stddev_ms:") != NULL);
+    if (!ok) snprintf(err, err_sz, "Expected benchmark stats with runs, mean, stddev, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 20: Dataframe Group Aggregations (tally & group by)
+static bool test_dataframe_aggregations(char *err, size_t err_sz) {
+    // 20.1 tally
+    write_file("fruits.txt", "apple\nbanana\napple\norange\napple\nbanana\n");
+    write_file("test_tally.otto", "read \"fruits.txt\", tally, table.\n");
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s test_tally.otto", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    remove_file("fruits.txt");
+    remove_file("test_tally.otto");
+
+    if (strstr(out1, "apple") == NULL || strstr(out1, "3") == NULL ||
+        strstr(out1, "banana") == NULL || strstr(out1, "2") == NULL) {
+        snprintf(err, err_sz, "tally aggregation failed, got '%s'", out1);
+        free(out1);
+        return false;
+    }
+    free(out1);
+
+    // 20.2 group by
+    const char *grp_json = "[{\"dept\": \"Eng\", \"name\": \"Alice\"}, {\"dept\": \"Sales\", \"name\": \"Bob\"}, {\"dept\": \"Eng\", \"name\": \"Charlie\"}]";
+    write_file("users_grp.json", grp_json);
+    write_file("test_grp.otto", "read \"users_grp.json\" json, group by dept, print.\n");
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s test_grp.otto", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+    remove_file("users_grp.json");
+    remove_file("test_grp.otto");
+
+    bool ok = (strstr(out2, "Eng:") != NULL && strstr(out2, "Sales:") != NULL);
+    if (!ok) snprintf(err, err_sz, "group by aggregation failed, got '%s'", out2);
+    free(out2);
+    return ok;
+}
+
+// Test 21: Starship-Style Prompt & REPL
+static bool test_starship_repl(char *err, size_t err_sz) {
+    char cmd[512];
+#ifdef _WIN32
+    snprintf(cmd, sizeof(cmd), "echo exit | %s", g_bin);
+#else
+    snprintf(cmd, sizeof(cmd), "echo exit | %s", g_bin);
+#endif
+    char *out = run_cmd(cmd, NULL);
+
+    bool ok = (strstr(out, "otto") != NULL && strstr(out, "v1.0") != NULL && strstr(out, ">") != NULL);
+    if (!ok) snprintf(err, err_sz, "Expected REPL banner and prompt, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 22: Zero-preposition positional argument syntax
+static bool test_zero_prepositions(char *err, size_t err_sz) {
+    // 22.1 replace without 'with'
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s -c \"\\\"hello foo world\\\", replace \\\"foo\\\" \\\"bar\\\", print.\"", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    trim_str(out1);
+    if (strcmp(out1, "hello bar world") != 0) {
+        snprintf(err, err_sz, "Zero-prep replace failed: expected 'hello bar world', got '%s'", out1);
+        free(out1);
+        return false;
+    }
+    free(out1);
+
+    // 22.2 split without 'by'
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s -c \"\\\"apple,banana,orange\\\", split \\\",\\\", print count them.\"", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+    trim_str(out2);
+    if (strcmp(out2, "3") != 0) {
+        snprintf(err, err_sz, "Zero-prep split failed: expected '3', got '%s'", out2);
+        free(out2);
+        return false;
+    }
+    free(out2);
+
+    // 22.3 sort without 'by'
+    write_file("test_users.json", "[{\"name\": \"Alice\", \"age\": 25}, {\"name\": \"Bob\", \"age\": 40}]");
+    char cmd3[512];
+    snprintf(cmd3, sizeof(cmd3), "%s -c \"read \\\"test_users.json\\\" json, sort age descending, print first's name.\"", g_bin);
+    char *out3 = run_cmd(cmd3, NULL);
+    remove_file("test_users.json");
+    trim_str(out3);
+    if (strcmp(out3, "Bob") != 0) {
+        snprintf(err, err_sz, "Zero-prep sort failed: expected 'Bob', got '%s'", out3);
+        free(out3);
+        return false;
+    }
+    free(out3);
+    return true;
+}
+
+// Test 23: Pronoun registers `that` and `them`
+static bool test_pronoun_registers(char *err, size_t err_sz) {
+    // 23.1 that arithmetic
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s -c \"5 * 10 into x. print that + 2.\"", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    trim_str(out1);
+    if (strcmp(out1, "52") != 0) {
+        snprintf(err, err_sz, "that register failed: expected '52', got '%s'", out1);
+        free(out1);
+        return false;
+    }
+    free(out1);
+
+    // 23.2 that's property
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s -c \"write {name: \\\"Alice\\\", role: \\\"admin\\\"} into user. print that's role.\"", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+    trim_str(out2);
+    if (strcmp(out2, "admin") != 0) {
+        snprintf(err, err_sz, "that's property failed: expected 'admin', got '%s'", out2);
+        free(out2);
+        return false;
+    }
+    free(out2);
+
+    // 23.3 them collection
+    char cmd3[512];
+    snprintf(cmd3, sizeof(cmd3), "%s -c \"\\\"cherry banana apple\\\", split \\\" \\\", sort them descending, print first.\"", g_bin);
+    char *out3 = run_cmd(cmd3, NULL);
+    trim_str(out3);
+    if (strcmp(out3, "cherry") != 0) {
+        snprintf(err, err_sz, "them register failed: expected 'cherry', got '%s'", out3);
+        free(out3);
+        return false;
+    }
+    free(out3);
+    return true;
+}
+
+// Test 24: Implicit Stdin Pipeline Loop
+static bool test_implicit_stdin_loop(char *err, size_t err_sz) {
+    write_file("test_in.txt", "apple 100\nbanana 200\n");
+    char cmd[512];
+#ifdef _WIN32
+    snprintf(cmd, sizeof(cmd), "%s -c \"print 1st word.\" < test_in.txt", g_bin);
+#else
+    snprintf(cmd, sizeof(cmd), "%s -c \"print 1st word.\" < test_in.txt", g_bin);
+#endif
+    char *out = run_cmd(cmd, NULL);
+    remove_file("test_in.txt");
+
+    bool ok = (strstr(out, "apple") != NULL && strstr(out, "banana") != NULL);
+    if (!ok) snprintf(err, err_sz, "Implicit stdin loop failed: expected apple and banana, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// ---------------------------------------------------------
+// Main Entry Point
+// ---------------------------------------------------------
+
+int main(int argc, char **argv) {
+    // 1. Resolve otto binary path
+#ifdef _WIN32
+    if (file_exists("otto.exe")) {
+        strcpy(g_bin, "otto.exe");
+    } else if (file_exists(".\\otto.exe")) {
+        strcpy(g_bin, ".\\otto.exe");
+    } else if (file_exists("./otto.exe")) {
+        strcpy(g_bin, "otto.exe");
+    }
+#else
+    if (file_exists("./otto")) {
+        strcpy(g_bin, "./otto");
+    } else if (file_exists("./otto.exe")) {
+        strcpy(g_bin, "./otto.exe");
+    }
+#endif
+    else if (argc > 1) {
+        strncpy(g_bin, argv[1], sizeof(g_bin) - 1);
+    } else {
+        fprintf(stderr, "Error: Cannot locate otto executable (looked for ./otto.exe or ./otto)\n");
+        return 1;
+    }
+
+    printf("\033[1;36m==========================================================\033[0m\n");
+    printf("\033[1;36mOTTO UNIFIED PORTABLE C TEST RUNNER (ALL 24 TESTS)\033[0m\n");
+    printf("\033[1;36mTarget Binary: %s\033[0m\n", g_bin);
+    printf("\033[1;36m==========================================================\033[0m\n");
+
+    // Master Tests (1-14)
+    run_test("Zero-filler recursion & TCO (gcd 1071 462)", test_tco_gcd);
+    run_test("TCO Deep Recursion (count_down 1000000)", test_tco_deep);
+    run_test("AWK lifecycle + ordinal + implicit number scanner", test_awk_lifecycle);
+    run_test("Possessive JSON navigation + sorting", test_json_nav);
+    run_test("Parallel tee (and) + short-circuit (or)", test_and_or_tee);
+    run_test("In-place dry-run & transactional rollback (simulate, inplace, undo)", test_simulate_inplace_undo);
+    run_test("Relational set operations (exclude, intersect, count)", test_relational_sets);
+    run_test("Binary unpacking (unpack u32 u8 u8)", test_binary_unpack);
+    run_test("Incremental build rule (target from src)", test_incremental_build);
+    run_test("Embedded SQLite stream (auto-create table, insert, query pushdown)", test_sqlite_stream);
+    run_test("Standalone binary compilation (compile into standalone executable)", test_standalone_compilation);
+    run_test("Native YAML Stream Processing", test_yaml_processing);
+    run_test("Strict Zero-Filler Rule Rejection", test_zero_filler_rejection);
+    run_test("TUI Table Grid Rendering", test_tui_table);
+
+    // Modern Capabilities Tests (15-21)
+    run_test("Native HTTP REST Streams (fetch & onto POST)", test_http_rest);
+    run_test("File Change Watcher Loop (watch Hook with change detection)", test_file_watcher);
+    run_test("Frecency Smart Directory Navigation (jump Verb)", test_frecency_jump);
+    run_test("Git-Aware Directory Scanning (tree & ignoring git)", test_git_tree_ignore);
+    run_test("Statistical Benchmarking (benchmark Verb)", test_benchmark);
+    run_test("Dataframe Group Aggregations (tally & group by)", test_dataframe_aggregations);
+    run_test("Starship-Style Prompt & REPL", test_starship_repl);
+
+    // Natural Language One-Liner Ergonomics (22-24)
+    run_test("Zero-preposition positional argument syntax (replace, split, sort)", test_zero_prepositions);
+    run_test("Pronoun registers 'that' and 'them'", test_pronoun_registers);
+    run_test("Implicit Stdin Pipeline Loop", test_implicit_stdin_loop);
+
+    printf("\n\033[1;36m==========================================================\033[0m\n");
+    if (g_passed == g_total) {
+        printf("\033[1;32mTEST RESULTS: %d / %d PASSED (100%% SUCCESS RATE)\033[0m\n", g_passed, g_total);
+    } else {
+        printf("\033[1;31mTEST RESULTS: %d / %d PASSED (%d FAILED)\033[0m\n", g_passed, g_total, g_total - g_passed);
+    }
+    printf("\033[1;36m==========================================================\033[0m\n");
+
+    return (g_passed == g_total) ? 0 : 1;
+}

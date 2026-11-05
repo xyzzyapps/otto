@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <filter id="subtle-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000000" flood-opacity="0.08" />
+    </filter>
+  </defs>
+
+  <!-- Background Card / Notion-style Tile -->
+  <rect x="32" y="32" width="448" height="448" rx="96" ry="96" fill="#FFFFFF" stroke="#18181B" stroke-width="20" filter="url(#subtle-shadow)" />
+
+  <!-- Prompt Chevron `>` -->
+  <path d="M 130 160 L 250 256 L 130 352" fill="none" stroke="#18181B" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Underscore Cursor `_` -->
+  <line x1="285" y1="352" x2="385" y2="352" stroke="#18181B" stroke-width="44" stroke-linecap="round" />
+</svg>

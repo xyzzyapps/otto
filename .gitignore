@@ -1,0 +1,56 @@
+# Build artifacts & executables
+*.exe
+*.o
+*.obj
+*.pdb
+*.ilk
+*.dll
+*.so
+*.dylib
+otto
+shx
+dud
+test_runner
+test-bin*
+
+# Keep vendor libraries
+!vendor/**
+
+# Temporary test outputs
+*.log
+*.db
+*.db-journal
+*.bin
+*.tmp
+scores.txt
+users.json
+users_grp.json
+backup.cfg
+primary.cfg
+doc.txt
+candidates.txt
+blacklist.txt
+verified.txt
+sample.bin
+hello.c
+hello.exe
+cluster.yaml
+fruits.txt
+test_watch_dir/
+test_git_dir/
+test_*.otto
+test_*.shx
+test_users.json
+user
+
+# Transaction journal
+.otto/
+.shx/
+
+# OS and Editor metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+zig-cache/
+zig-out/

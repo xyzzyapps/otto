@@ -28,7 +28,7 @@ Download standalone binaries (zero runtime dependencies) from [**GitHub Releases
 
 | Traditional Utility Replaced | What Developers Usually Install | Native `otto` Syntax |
 |:---|:---|:---|
-| **`ripgrep` (`rg`) / `grep`** | `rg -i "TODO" src/` | `search casefold "TODO" in "src", table.` |
+| **`ripgrep` (`rg`) / `grep`** | `rg -i "TODO" src/` | `search -i "TODO" in "src", table.` _(or `search casefold`)_ |
 | **`eza -la` / `fd` / `stat`** | `eza -la --sort=size` | `stat "src/*", sort size descending, table.` |
 | **`bat` / `less`** | `bat src/main.c` | `view "src/main.c".` |
 | **`git` + `delta` / `lazygit`** | `git log --oneline` / `git status -s` | `read commits, table.` &bull; `read status, table.` &bull; `read diff, print.` |
@@ -62,12 +62,12 @@ Download standalone binaries (zero runtime dependencies) from [**GitHub Releases
 
 ### 1. Multi-File `.gitignore`-Aware Code Search & Rich File Metadata (`rg` + `fd` + `eza`)
 ```bash
-# Search codebase respecting .gitignore and render a structured terminal grid
-search casefold "TODO" in "src", table.
+# Search codebase respecting .gitignore (supports -i or casefold)
+search -i "TODO" in "src", table.
 
-# Filter files using human unit literals and inspect metadata
-every recursively file "src/*" where each's size > 10kb: print each's name.
-stat "src/*", sort size descending, take 5, table.
+# Filter files recursively using human unit literals (supports -r or recursively)
+every -r file "src/*" where each's size > 10kb: print each's name.
+stat -r "src", sort size descending, take 5, table.
 ```
 
 ### 2. Syntax-Highlighted Pager & Native Structured Git Scanners (`bat` + `delta`)

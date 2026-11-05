@@ -32,11 +32,14 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <direct.h>
+#define strncasecmp _strnicmp
 #ifndef S_ISDIR
 #define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
 #endif
 #else
 #include <unistd.h>
+#include <dirent.h>
+#include <strings.h>
 #include <time.h>
 #include <sys/wait.h>
 #ifdef __APPLE__
@@ -65,7 +68,8 @@ static void sleep_millis(uint32_t ms) {
 #endif
 }
 
-static uint64_t get_watch_mtime(const char *path) {
+static uint64_t get_watch_mtime(const char *path, bool recursive, int depth) {
+    if (depth > 16) return 0;
     if (!path || !path[0]) path = ".";
 #ifdef _WIN32
     WIN32_FIND_DATAA fd;
@@ -84,15 +88,40 @@ static uint64_t get_watch_mtime(const char *path) {
         if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
         uint64_t t = ((uint64_t)fd.ftLastWriteTime.dwHighDateTime << 32) | fd.ftLastWriteTime.dwLowDateTime;
         if (t > max_t) max_t = t;
+        if (recursive && (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            char child[512];
+            snprintf(child, sizeof(child), "%s/%s", path, fd.cFileName);
+            uint64_t sub_t = get_watch_mtime(child, true, depth + 1);
+            if (sub_t > max_t) max_t = sub_t;
+        }
     } while (FindNextFileA(h, &fd));
     FindClose(h);
     return max_t;
 #else
     struct stat st;
-    if (stat(path, &st) == 0) {
-        return (uint64_t)st.st_mtime;
+    if (stat(path, &st) != 0) return 0;
+    uint64_t max_t = (uint64_t)st.st_mtime;
+    if (S_ISDIR(st.st_mode)) {
+        DIR *d = opendir(path);
+        if (d) {
+            struct dirent *de;
+            while ((de = readdir(d)) != NULL) {
+                if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+                char child[512];
+                snprintf(child, sizeof(child), "%s/%s", path, de->d_name);
+                struct stat cst;
+                if (stat(child, &cst) == 0) {
+                    if ((uint64_t)cst.st_mtime > max_t) max_t = (uint64_t)cst.st_mtime;
+                    if (recursive && S_ISDIR(cst.st_mode)) {
+                        uint64_t sub_t = get_watch_mtime(child, true, depth + 1);
+                        if (sub_t > max_t) max_t = sub_t;
+                    }
+                }
+            }
+            closedir(d);
+        }
     }
-    return 0;
+    return max_t;
 #endif
 }
 
@@ -232,6 +261,100 @@ static bool copy_file_bytes(const char *src, const char *dst) {
     fclose(in);
     fclose(out);
     return true;
+}
+
+static bool remove_dir_recursive(const char *dir_path, int depth) {
+    if (depth > 32 || !dir_path || !dir_path[0]) return false;
+    bool all_ok = true;
+#ifdef _WIN32
+    char pat[512];
+    snprintf(pat, sizeof(pat), "%s/*", dir_path);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pat, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+            char child[512];
+            snprintf(child, sizeof(child), "%s/%s", dir_path, fd.cFileName);
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                if (!remove_dir_recursive(child, depth + 1)) all_ok = false;
+            } else {
+                journal_backup_file(child);
+                if (remove(child) != 0) all_ok = false;
+            }
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+    if (_rmdir(dir_path) != 0) all_ok = false;
+#else
+    DIR *d = opendir(dir_path);
+    if (d) {
+        struct dirent *de;
+        while ((de = readdir(d)) != NULL) {
+            if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+            char child[512];
+            snprintf(child, sizeof(child), "%s/%s", dir_path, de->d_name);
+            struct stat cst;
+            if (stat(child, &cst) == 0 && S_ISDIR(cst.st_mode)) {
+                if (!remove_dir_recursive(child, depth + 1)) all_ok = false;
+            } else {
+                journal_backup_file(child);
+                if (remove(child) != 0) all_ok = false;
+            }
+        }
+        closedir(d);
+    }
+    if (rmdir(dir_path) != 0) all_ok = false;
+#endif
+    return all_ok;
+}
+
+static bool copy_dir_recursive(const char *src_dir, const char *dst_dir, int depth) {
+    if (depth > 32 || !src_dir || !dst_dir) return false;
+#ifdef _WIN32
+    _mkdir(dst_dir);
+    char pat[512];
+    snprintf(pat, sizeof(pat), "%s/*", src_dir);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    bool all_ok = true;
+    do {
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        char s_child[512], d_child[512];
+        snprintf(s_child, sizeof(s_child), "%s/%s", src_dir, fd.cFileName);
+        snprintf(d_child, sizeof(d_child), "%s/%s", dst_dir, fd.cFileName);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (!copy_dir_recursive(s_child, d_child, depth + 1)) all_ok = false;
+        } else {
+            journal_backup_file(d_child);
+            if (!copy_file_bytes(s_child, d_child)) all_ok = false;
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return all_ok;
+#else
+    mkdir(dst_dir, 0755);
+    DIR *d = opendir(src_dir);
+    if (!d) return false;
+    bool all_ok = true;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+        char s_child[512], d_child[512];
+        snprintf(s_child, sizeof(s_child), "%s/%s", src_dir, de->d_name);
+        snprintf(d_child, sizeof(d_child), "%s/%s", dst_dir, de->d_name);
+        struct stat cst;
+        if (stat(s_child, &cst) == 0 && S_ISDIR(cst.st_mode)) {
+            if (!copy_dir_recursive(s_child, d_child, depth + 1)) all_ok = false;
+        } else {
+            journal_backup_file(d_child);
+            if (!copy_file_bytes(s_child, d_child)) all_ok = false;
+        }
+    }
+    closedir(d);
+    return all_ok;
+#endif
 }
 
 static uint32_t parse_interval_ms(Slice s) {
@@ -927,22 +1050,35 @@ void vm_run(VM *vm) {
                     }
                 }
                 char *path = (frame->acc.type == VAL_SLICE) ? slice_to_cstr(frame->acc.as.slice, &vm->iter_arena) : NULL;
-                if (!path) break;
 
-                if (inst.scanner == TOK_SCAN_DIFF) {
-                    frame->acc = dev_git_scan(TOK_SCAN_DIFF, path, &vm->iter_arena);
+                if (inst.scanner == TOK_SCAN_FILE || inst.scanner == TOK_SCAN_FILES) {
+                    StreamDesc *sd = scanner_open_stream(TOK_SCAN_FILES, path ? path : "*", inst.adverbs, &vm->iter_arena);
+                    Value list = val_list_create(&vm->iter_arena, 16);
+                    Value item;
+                    while (sd && sd->next && sd->next(sd, &item, &vm->iter_arena)) {
+                        val_list_append(&list, item, &vm->iter_arena);
+                    }
+                    if (sd && sd->close) sd->close(sd);
+                    frame->acc = list;
                     break;
                 }
 
                 if (inst.scanner == TOK_SCAN_TREE) {
-                    StreamDesc *sd = scanner_open_stream(TOK_SCAN_TREE, path, inst.adverbs, &vm->iter_arena);
+                    StreamDesc *sd = scanner_open_stream(TOK_SCAN_TREE, path ? path : ".", inst.adverbs, &vm->iter_arena);
                     Value list = val_list_create(&vm->iter_arena, 16);
                     Value item;
-                    while (sd->next(sd, &item, &vm->iter_arena)) {
+                    while (sd && sd->next && sd->next(sd, &item, &vm->iter_arena)) {
                         val_list_append(&list, item, &vm->iter_arena);
                     }
-                    if (sd->close) sd->close(sd);
+                    if (sd && sd->close) sd->close(sd);
                     frame->acc = list;
+                    break;
+                }
+
+                if (!path) break;
+
+                if (inst.scanner == TOK_SCAN_DIFF) {
+                    frame->acc = dev_git_scan(TOK_SCAN_DIFF, path, &vm->iter_arena);
                     break;
                 }
 
@@ -1352,6 +1488,7 @@ void vm_run(VM *vm) {
                     Slice s = to_split.as.slice;
                     Value split_list = val_list_create(&vm->iter_arena, 16);
                     size_t dlen = strlen(delim);
+                    bool casefold = (inst.adverbs & ADV_CASEFOLD) != 0;
                     size_t start = 0;
                     for (size_t i = 0; i <= s.len; i++) {
                         bool is_match = false;
@@ -1359,7 +1496,9 @@ void vm_run(VM *vm) {
                             if (i == s.len || s.ptr[i] == ' ' || s.ptr[i] == '\t' || s.ptr[i] == '\r' || s.ptr[i] == '\n') {
                                 is_match = true;
                             }
-                        } else if (dlen > 0 && i + dlen <= s.len && memcmp(s.ptr + i, delim, dlen) == 0) {
+                        } else if (dlen > 0 && i + dlen <= s.len &&
+                                   (casefold ? (strncasecmp(s.ptr + i, delim, dlen) == 0)
+                                             : (memcmp(s.ptr + i, delim, dlen) == 0))) {
                             is_match = true;
                         } else if (i == s.len) {
                             is_match = true;
@@ -1855,7 +1994,8 @@ void vm_run(VM *vm) {
                     break;
                 }
                 if ((inst.adverbs & ADV_SIMULATE) || vm->simulate_mode) {
-                    journal_simulate_diff(path, "<existing file>", 15, "", 0);
+                    journal_simulate_diff(path, S_ISDIR(st.st_mode) ? "<existing directory>" : "<existing file>",
+                                          S_ISDIR(st.st_mode) ? 20 : 15, "", 0);
                     frame->acc = val_bool(true);
                 } else {
                     if (!S_ISDIR(st.st_mode)) {
@@ -1863,6 +2003,10 @@ void vm_run(VM *vm) {
                         bool ok = (remove(path) == 0);
                         frame->acc = val_bool(ok);
                         if (!ok) frame->err = val_cstr("remove: failed to delete file");
+                    } else if (inst.adverbs & ADV_RECURSIVELY) {
+                        bool ok = remove_dir_recursive(path, 0);
+                        frame->acc = val_bool(ok);
+                        if (!ok) frame->err = val_cstr("remove: failed to recursively remove directory");
                     } else {
 #ifdef _WIN32
                         bool ok = (_rmdir(path) == 0);
@@ -1870,7 +2014,7 @@ void vm_run(VM *vm) {
                         bool ok = (rmdir(path) == 0);
 #endif
                         frame->acc = val_bool(ok);
-                        if (!ok) frame->err = val_cstr("remove: failed to remove directory");
+                        if (!ok) frame->err = val_cstr("remove: directory not empty (use -r or recursively)");
                     }
                 }
                 break;
@@ -1885,18 +2029,29 @@ void vm_run(VM *vm) {
                 }
                 char *src = slice_to_cstr(src_val.as.slice, &vm->iter_arena);
                 char *dst = val_to_string(vm->constants[inst.operand], &vm->iter_arena);
+                struct stat src_st;
+                bool src_is_dir = (stat(src, &src_st) == 0 && S_ISDIR(src_st.st_mode));
                 if ((inst.adverbs & ADV_SIMULATE) || vm->simulate_mode) {
                     journal_simulate_diff(dst, "", 0, src, strlen(src));
                     frame->acc = val_cstr(dst);
+                } else if (op == OP_VERB_COPY && src_is_dir) {
+                    if (!(inst.adverbs & ADV_RECURSIVELY)) {
+                        frame->err = val_cstr("copy: source is a directory (use -r or recursively)");
+                    } else if (copy_dir_recursive(src, dst, 0)) {
+                        frame->acc = val_cstr(dst);
+                    } else {
+                        frame->err = val_cstr("copy: failed to recursively copy directory");
+                    }
                 } else {
-                    if (op == OP_VERB_MOVE) journal_backup_file(src);
-                    journal_backup_file(dst);
+                    if (op == OP_VERB_MOVE && !src_is_dir) journal_backup_file(src);
+                    if (!src_is_dir) journal_backup_file(dst);
                     bool ok = false;
                     if (op == OP_VERB_COPY) {
                         ok = copy_file_bytes(src, dst);
                     } else {
                         if (rename(src, dst) == 0) ok = true;
-                        else if (copy_file_bytes(src, dst) && remove(src) == 0) ok = true;
+                        else if (!src_is_dir && copy_file_bytes(src, dst) && remove(src) == 0) ok = true;
+                        else if (src_is_dir && copy_dir_recursive(src, dst, 0) && remove_dir_recursive(src, 0)) ok = true;
                     }
                     if (ok) frame->acc = val_cstr(dst);
                     else frame->err = val_cstr("copy/move: operation failed");
@@ -2400,10 +2555,11 @@ void vm_run(VM *vm) {
                     Value pval = vm->constants[inst.slot_mask];
                     path = val_to_string(pval, &vm->iter_arena);
                 }
+                bool rec_watch = (inst.adverbs & ADV_RECURSIVELY) != 0;
 
                 if (!vm->watch_initialized) {
                     vm->watch_initialized = true;
-                    vm->watch_last_mtime = get_watch_mtime(path);
+                    vm->watch_last_mtime = get_watch_mtime(path, rec_watch, 0);
                     break;
                 }
 
@@ -2414,7 +2570,7 @@ void vm_run(VM *vm) {
 
                 while (!g_sigint_received) {
                     sleep_millis(150);
-                    uint64_t cur_t = get_watch_mtime(path);
+                    uint64_t cur_t = get_watch_mtime(path, rec_watch, 0);
                     if (cur_t > vm->watch_last_mtime) {
                         vm->watch_last_mtime = cur_t;
                         break;

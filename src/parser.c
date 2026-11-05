@@ -69,6 +69,7 @@ static uint16_t parse_adverbs(Parser *p) {
             case TOK_ADV_INPLACE: advs |= ADV_INPLACE; break;
             case TOK_ADV_CONCURRENTLY: advs |= ADV_CONCURRENTLY; break;
             case TOK_ADV_CASEFOLD: advs |= ADV_CASEFOLD; break;
+            case TOK_ADV_CASEFOLD_REC: advs |= (ADV_CASEFOLD | ADV_RECURSIVELY); break;
             case TOK_ADV_SIMULATE: advs |= ADV_SIMULATE; break;
             case TOK_ADV_PARALLEL: advs |= ADV_PARALLEL; break;
             case TOK_ADV_BACKGROUND: advs |= ADV_BACKGROUND; break;
@@ -156,6 +157,16 @@ static ASTNode *parse_primary(Parser *p) {
         ASTNode *node = ast_create(p->arena, AST_EXPR_UNARY, line, col);
         node->as.unary.op = TOK_MINUS;
         node->as.unary.operand = operand;
+        return node;
+    }
+    if ((check(p, TOK_ADV_CASEFOLD) || check(p, TOK_ADV_RECURSIVELY) || check(p, TOK_ADV_CASEFOLD_REC)) &&
+        p->current.lexeme.len >= 2 && p->current.lexeme.ptr[0] == '-') {
+        Token ftok = advance(p);
+        ASTNode *vnode = ast_create(p->arena, AST_EXPR_VAR, line, col + 1);
+        vnode->as.var.name = (Slice){ftok.lexeme.ptr + 1, ftok.lexeme.len - 1};
+        ASTNode *node = ast_create(p->arena, AST_EXPR_UNARY, line, col);
+        node->as.unary.op = TOK_MINUS;
+        node->as.unary.operand = vnode;
         return node;
     }
 
@@ -395,11 +406,19 @@ static ASTNode *parse_command(Parser *p) {
     int line = p->current.line;
     int col = p->current.col;
 
-    uint16_t adverbs = parse_adverbs(p);
+    uint16_t adverbs = 0;
+    if (token_is_adverb(p->current.type)) {
+        bool is_short_flag = (p->current.lexeme.len >= 2 && p->current.lexeme.ptr[0] == '-');
+        Token nxt = is_short_flag ? lexer_peek(&p->lexer) : p->current;
+        if (!is_short_flag || token_is_verb(nxt.type) || token_is_adverb(nxt.type)) {
+            adverbs = parse_adverbs(p);
+        }
+    }
 
     // If starting with an expression or a user-defined function call
     if (check(p, TOK_NUMBER) || check(p, TOK_UNIT_LIT) || check(p, TOK_STRING) || check(p, TOK_BOOL) ||
-        check(p, TOK_NIL) || check(p, TOK_LBRACE) || check(p, TOK_LBRACKET) ||
+        check(p, TOK_NIL) || check(p, TOK_LBRACE) || check(p, TOK_LBRACKET) || check(p, TOK_MINUS) ||
+        (token_is_adverb(p->current.type) && p->current.lexeme.len >= 2 && p->current.lexeme.ptr[0] == '-') ||
         check(p, TOK_LPAREN) || (p->current.type >= TOK_REG_IT && p->current.type <= TOK_REG_PREVIOUS) ||
         (check(p, TOK_IDENT) && is_defined_func(p, p->current.lexeme))) {
         ASTNode *lit_expr = parse_expr(p);
@@ -455,9 +474,6 @@ static ASTNode *parse_command(Parser *p) {
     node->as.cmd.verb = verb;
     node->as.cmd.raw_cmd = raw_cmd;
     node->as.cmd.adverbs = adverbs;
-    if (token_is_adverb(p->current.type)) {
-        node->as.cmd.adverbs |= parse_adverbs(p);
-    }
 
     if (verb == TOK_VERB_HELP || verb == TOK_VERB_EXAMPLES) {
         if (!check(p, TOK_COMMA) && !check(p, TOK_AND) && !check(p, TOK_OR) &&
@@ -468,6 +484,12 @@ static ASTNode *parse_command(Parser *p) {
             node->as.cmd.direct_arg = lit;
         }
         return node;
+    }
+
+    if (token_is_adverb(p->current.type) &&
+        !((verb == TOK_VERB_PRINT || verb == TOK_VERB_ADD) &&
+          p->current.lexeme.len >= 2 && p->current.lexeme.ptr[0] == '-')) {
+        node->as.cmd.adverbs |= parse_adverbs(p);
     }
 
     // Optional `git` prefix before git scanners (e.g. `read git status`, `read git commits`)
@@ -518,6 +540,10 @@ static ASTNode *parse_command(Parser *p) {
         node->as.cmd.scanner = stok.type;
     }
 
+    if (token_is_adverb(p->current.type)) {
+        node->as.cmd.adverbs |= parse_adverbs(p);
+    }
+
     if (check(p, TOK_VERB_COUNT)) {
         advance(p);
         node->as.cmd.adverbs |= (1 << 13);
@@ -542,6 +568,11 @@ static ASTNode *parse_command(Parser *p) {
     if (node->as.cmd.scanner == 0 && token_is_scanner(p->current.type)) {
         Token stok = advance(p);
         node->as.cmd.scanner = stok.type;
+    }
+
+    // Adverbs after direct arg / scanner (e.g. `stat "src" -r`, `search "err" -i in "logs"`, `replace "a" -i "b"`)
+    if (token_is_adverb(p->current.type)) {
+        node->as.cmd.adverbs |= parse_adverbs(p);
     }
 
     // Preposition slots: PrepToken Expr (or multiple variables for `unpack ... into a b c`)
@@ -741,13 +772,15 @@ static ASTNode *parse_block_or_pipe(Parser *p) {
         return node;
     }
 
-    // 3b. "watch" [Scanner?] [Pattern?]: Pipe .
+    // 3b. "watch" Adverb* [Scanner?] Adverb* [Pattern?] Adverb*: Pipe .
     if (match(p, TOK_HOOK_WATCH)) {
+        uint16_t advs = parse_adverbs(p);
         OttoTokenType scanner = TOK_SCAN_FILES;
         if (token_is_scanner(p->current.type)) {
             Token stok = advance(p);
             scanner = stok.type;
         }
+        if (token_is_adverb(p->current.type)) advs |= parse_adverbs(p);
         Slice pat = (Slice){"*", 1};
         if (!check(p, TOK_COLON) && !check(p, TOK_EOF)) {
             if (check(p, TOK_STRING) || check(p, TOK_IDENT)) {
@@ -755,17 +788,19 @@ static ASTNode *parse_block_or_pipe(Parser *p) {
                 pat = ptok.lexeme;
             }
         }
+        if (token_is_adverb(p->current.type)) advs |= parse_adverbs(p);
         consume(p, TOK_COLON, "Expected ':' after 'watch' header");
         ASTNode *body = parse_pipe(p);
         ASTNode *node = ast_create(p->arena, AST_BLOCK, line, col);
         node->as.block.kind = HOOK_WATCH;
+        node->as.block.adverbs = advs;
         node->as.block.scanner = scanner;
         node->as.block.src_name = pat;
         node->as.block.body = body;
         return node;
     }
 
-    // 4. "every" [Quantifier?] Adverb* Scanner [Expr?] [PrepSlots*]: Pipe .
+    // 4. "every" [Quantifier?] Adverb* Scanner Adverb* [Expr?] Adverb* [PrepSlots*]: Pipe .
     if (match(p, TOK_HOOK_EVERY)) {
         int quantifier = 0;
         if (check(p, TOK_NUMBER)) {
@@ -793,11 +828,18 @@ static ASTNode *parse_block_or_pipe(Parser *p) {
             Token stok = advance(p);
             scanner = stok.type;
         }
+        if (token_is_adverb(p->current.type)) {
+            advs |= parse_adverbs(p);
+        }
 
         ASTNode *src_expr = NULL;
         // Direct arg (like "a.log" or "*.txt" or :8080)
-        if (!token_is_prep(p->current.type) && !check(p, TOK_COLON) && !check(p, TOK_EOF)) {
+        if (!token_is_prep(p->current.type) && !token_is_adverb(p->current.type) &&
+            !check(p, TOK_COLON) && !check(p, TOK_EOF)) {
             src_expr = parse_expr(p);
+        }
+        if (token_is_adverb(p->current.type)) {
+            advs |= parse_adverbs(p);
         }
 
         ASTNode *node = ast_create(p->arena, AST_BLOCK, line, col);
@@ -813,10 +855,13 @@ static ASTNode *parse_block_or_pipe(Parser *p) {
             }
         }
 
-        // Prep slots before colon (e.g. matching "500", where cpu >= 80)
+        // Prep slots before colon (e.g. matching "500" -i, where cpu >= 80)
         while (token_is_prep(p->current.type)) {
             Token prep_tok = advance(p);
             ASTNode *pexpr = parse_expr(p);
+            if (token_is_adverb(p->current.type)) {
+                node->as.block.adverbs |= parse_adverbs(p);
+            }
             if (node->as.block.prep_count < 8) {
                 node->as.block.preps[node->as.block.prep_count].prep = prep_tok.type;
                 node->as.block.preps[node->as.block.prep_count].expr = pexpr;

@@ -194,7 +194,8 @@ static OttoTokenType classify_word(const char *word, size_t len) {
     if (len == 4 && strncasecmp(word, "each", 4) == 0) return TOK_ORD_EACH;
 
     // 5. Adverbs
-    if (len == 11 && strncasecmp(word, "recursively", 11) == 0) return TOK_ADV_RECURSIVELY;
+    if ((len == 11 && strncasecmp(word, "recursively", 11) == 0) ||
+        (len == 9 && strncasecmp(word, "recursive", 9) == 0)) return TOK_ADV_RECURSIVELY;
     if (len == 11 && strncasecmp(word, "numerically", 11) == 0) return TOK_ADV_NUMERICALLY;
     if (len == 10 && strncasecmp(word, "descending", 10) == 0) return TOK_ADV_DESCENDING;
     if (len == 8 && strncasecmp(word, "uniquely", 8) == 0) return TOK_ADV_UNIQUELY;
@@ -365,8 +366,33 @@ Token lexer_next(Lexer *lex) {
     if (c == '+') { next_char(lex); tok.type = TOK_PLUS; tok.lexeme = (Slice){start, 1}; return tok; }
     if (c == '-') {
         // Could be negative number if followed by digit
-        if (isdigit((unsigned char)peek_next_char(lex))) {
+        char n1 = peek_next_char(lex);
+        if (isdigit((unsigned char)n1)) {
             // fallthrough to number lexer
+        } else if (n1 == 'i' || n1 == 'I' || n1 == 'r' || n1 == 'R') {
+            char n2 = (lex->cursor + 2 < lex->length) ? lex->source[lex->cursor + 2] : '\0';
+            char n3 = (lex->cursor + 3 < lex->length) ? lex->source[lex->cursor + 3] : '\0';
+            if (!is_ident_char(n2) && n2 != '.') {
+                next_char(lex); // '-'
+                next_char(lex); // 'i' or 'r'
+                tok.type = (n1 == 'i' || n1 == 'I') ? TOK_ADV_CASEFOLD : TOK_ADV_RECURSIVELY;
+                tok.lexeme = (Slice){start, 2};
+                return tok;
+            } else if ((n2 == 'i' || n2 == 'I' || n2 == 'r' || n2 == 'R') && !is_ident_char(n3) && n3 != '.') {
+                next_char(lex); // '-'
+                next_char(lex); // first flag
+                next_char(lex); // second flag
+                bool has_i = (n1 == 'i' || n1 == 'I' || n2 == 'i' || n2 == 'I');
+                bool has_r = (n1 == 'r' || n1 == 'R' || n2 == 'r' || n2 == 'R');
+                tok.type = (has_i && has_r) ? TOK_ADV_CASEFOLD_REC
+                         : (has_i ? TOK_ADV_CASEFOLD : TOK_ADV_RECURSIVELY);
+                tok.lexeme = (Slice){start, 3};
+                return tok;
+            }
+            next_char(lex);
+            tok.type = TOK_MINUS;
+            tok.lexeme = (Slice){start, 1};
+            return tok;
         } else {
             next_char(lex);
             tok.type = TOK_MINUS;
@@ -641,7 +667,7 @@ const char * const *lexer_all_keywords(void) {
         "first", "second", "third", "fourth", "last", "top", "each",
         "it", "them", "that", "error", "previous",
         // Adverbs
-        "recursively", "numerically", "descending", "uniquely", "inplace",
+        "recursively", "recursive", "numerically", "descending", "uniquely", "inplace",
         "concurrently", "casefold", "simulate", "parallel", "background", "ignoring",
         // Prepositions & Control
         "into", "onto", "from", "with", "by", "where", "matching", "at", "in",

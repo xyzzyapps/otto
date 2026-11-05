@@ -1,3 +1,8 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
+#endif
+
 #include "scanner.h"
 #include "ast.h"
 #include "json_yaml.h"
@@ -6,11 +11,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <sys/stat.h>
 
 #ifdef _WIN32
 #include <windows.h>
 #include <tlhelp32.h>
 #include <io.h>
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
+#endif
 #else
 #include <dirent.h>
 #include <sys/types.h>
@@ -444,19 +453,31 @@ StreamDesc *scanner_open_stream(OttoTokenType scanner, const char *source, uint1
         char dir_prefix[260] = "";
         char pattern[260] = "*";
 
-        const char *last_slash = strrchr(pat, '/');
-        if (!last_slash) last_slash = strrchr(pat, '\\');
-
-        if (last_slash) {
-            size_t dlen = (size_t)(last_slash - pat);
-            size_t copy_len = dlen < sizeof(dir_prefix) - 1 ? dlen : sizeof(dir_prefix) - 1;
-            memcpy(dir_prefix, pat, copy_len);
-            dir_prefix[copy_len] = '\0';
-            strncpy(pattern, last_slash + 1, sizeof(pattern) - 1);
-            pattern[sizeof(pattern) - 1] = '\0';
+        struct stat pst;
+        if (strchr(pat, '*') == NULL && strchr(pat, '?') == NULL &&
+            stat(pat, &pst) == 0 && S_ISDIR(pst.st_mode)) {
+            strncpy(dir_prefix, pat, sizeof(dir_prefix) - 1);
+            dir_prefix[sizeof(dir_prefix) - 1] = '\0';
+            size_t dlen = strlen(dir_prefix);
+            while (dlen > 1 && (dir_prefix[dlen - 1] == '/' || dir_prefix[dlen - 1] == '\\')) {
+                dir_prefix[--dlen] = '\0';
+            }
+            strcpy(pattern, "*");
         } else {
-            strncpy(pattern, pat, sizeof(pattern) - 1);
-            pattern[sizeof(pattern) - 1] = '\0';
+            const char *last_slash = strrchr(pat, '/');
+            if (!last_slash) last_slash = strrchr(pat, '\\');
+
+            if (last_slash) {
+                size_t dlen = (size_t)(last_slash - pat);
+                size_t copy_len = dlen < sizeof(dir_prefix) - 1 ? dlen : sizeof(dir_prefix) - 1;
+                memcpy(dir_prefix, pat, copy_len);
+                dir_prefix[copy_len] = '\0';
+                strncpy(pattern, last_slash + 1, sizeof(pattern) - 1);
+                pattern[sizeof(pattern) - 1] = '\0';
+            } else {
+                strncpy(pattern, pat, sizeof(pattern) - 1);
+                pattern[sizeof(pattern) - 1] = '\0';
+            }
         }
 
         glob_walk_dir(dir_prefix, pattern, adverbs, fg, arena, 0);

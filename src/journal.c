@@ -168,9 +168,18 @@ bool journal_undo_last(void) {
             continue;
         }
 
-        // Copy bak_file -> orig_file
+        // Copy bak_file -> orig_file (recreating parent dirs if removed by `remove -r`)
         FILE *in = fopen(bak_file, "rb");
         if (in) {
+            char parent[512];
+            snprintf(parent, sizeof(parent), "%s", orig_file);
+            char *last_s = strrchr(parent, '/');
+            char *last_b = strrchr(parent, '\\');
+            char *sep = (last_b && (!last_s || last_b > last_s)) ? last_b : last_s;
+            if (sep && sep > parent) {
+                *sep = '\0';
+                ensure_dir(parent);
+            }
             FILE *out = fopen(orig_file, "wb");
             if (out) {
                 char buf[4096];

@@ -1254,6 +1254,61 @@ static bool test_help_diagnostics_tutor(char *err, size_t err_sz) {
     return ok;
 }
 
+// Test 35: Short Flag Adverbs (-i, -r, -ir) & Recursive Operations
+static bool test_short_flags_and_recursion(char *err, size_t err_sz) {
+    // 35.1 Casefold short flag -i in replace and sort
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s -c \"\\\"HELLO WORLD\\\", replace -i \\\"world\\\" \\\"Otto\\\", print.\"", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    if (!out1 || strstr(out1, "HELLO Otto") == NULL) {
+        snprintf(err, err_sz, "replace -i failed: got '%s'", out1 ? out1 : "(null)");
+        if (out1) free(out1);
+        return false;
+    }
+    free(out1);
+
+    // 35.2 Casefold in sort -i
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s -c \"[\\\"banana\\\", \\\"Apple\\\", \\\"CHERRY\\\"], sort -i, print first.\"", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+    if (!out2 || strstr(out2, "Apple") == NULL) {
+        snprintf(err, err_sz, "sort -i failed: got '%s'", out2 ? out2 : "(null)");
+        if (out2) free(out2);
+        return false;
+    }
+    free(out2);
+
+    // 35.3 Recursive directory copy and remove with -r
+    mkdir_p("test_rec_short_src");
+    mkdir_p("test_rec_short_src/sub");
+    write_file("test_rec_short_src/sub/file.txt", "recursive data\n");
+
+    char cmd3[512];
+    snprintf(cmd3, sizeof(cmd3), "%s -c \"copy -r \\\"test_rec_short_src\\\" \\\"test_rec_short_dst\\\". stat \\\"test_rec_short_dst/sub/file.txt\\\", print each's name. remove -r \\\"test_rec_short_dst\\\". remove -r \\\"test_rec_short_src\\\".\"", g_bin);
+    char *out3 = run_cmd(cmd3, NULL);
+    bool ok3 = (out3 && strstr(out3, "file.txt") != NULL && !file_exists("test_rec_short_dst/sub/file.txt"));
+    if (!ok3) {
+        snprintf(err, err_sz, "copy/remove -r failed: got '%s'", out3 ? out3 : "(null)");
+        if (out3) free(out3);
+        return false;
+    }
+    free(out3);
+
+    // 35.4 Multi-file search with -i flag
+    char cmd4[512];
+    snprintf(cmd4, sizeof(cmd4), "%s -c \"search -i \\\"otto\\\" \\\"src\\\", print count.\"", g_bin);
+    char *out4 = run_cmd(cmd4, NULL);
+    bool ok4 = (out4 && atoi(out4) > 0);
+    if (!ok4) {
+        snprintf(err, err_sz, "search -i failed: got '%s'", out4 ? out4 : "(null)");
+        if (out4) free(out4);
+        return false;
+    }
+    free(out4);
+
+    return true;
+}
+
 // ---------------------------------------------------------
 // Main Entry Point
 // ---------------------------------------------------------
@@ -1283,7 +1338,7 @@ int main(int argc, char **argv) {
     }
 
     printf("\033[1;36m==========================================================\033[0m\n");
-    printf("\033[1;36mOTTO UNIFIED PORTABLE C TEST RUNNER (ALL 34 TESTS)\033[0m\n");
+    printf("\033[1;36mOTTO UNIFIED PORTABLE C TEST RUNNER (ALL 35 TESTS)\033[0m\n");
     printf("\033[1;36mTarget Binary: %s\033[0m\n", g_bin);
     printf("\033[1;36m==========================================================\033[0m\n");
 
@@ -1330,6 +1385,7 @@ int main(int argc, char **argv) {
     run_test("Disk Usage, Ports Scanner, Auto .env Loader & Ottofile Task Runner", test_disk_ports_dotenv_ottofile);
     run_test("Live abbr, Deduplicated $PATH prepend/append, Persistent History & Stderr Separation", test_abbr_path_history_stderr);
     run_test("Built-in help/examples, Caret Diagnostics, Levenshtein/Rosetta Hints & otto tutor", test_help_diagnostics_tutor);
+    run_test("Short Flag Adverbs (-i, -r, -ir) & Recursive Operations", test_short_flags_and_recursion);
 
     printf("\n\033[1;36m==========================================================\033[0m\n");
     if (g_passed == g_total) {

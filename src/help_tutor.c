@@ -35,16 +35,16 @@ typedef struct HelpEntry {
 
 static const HelpEntry g_help_db[] = {
     { "search", "Dev Tools (replaces ripgrep)",
-      "Fast recursive gitignore-aware multi-file text search returning {file, line, col, text} maps.",
-      "search [casefold] \"<pattern>\" [in \"<dir>\"]",
+      "Fast recursive gitignore-aware multi-file text search returning {file, line, col, text} maps. Supports `-i` / `casefold`.",
+      "search [-i | casefold] \"<pattern>\" [in \"<dir>\"]",
       "  search \"TODO\" in \"src\", table.\n"
-      "  search casefold \"error\" \"logs\", print count.\n"
+      "  search -i \"error\" \"logs\", print count.\n"
       "  search \"vm_run\" \"src\", print first's file." },
     { "stat", "Dev Tools (replaces eza / fd)",
-      "Inspect rich file metadata ({path, name, ext, size, age, modified, dir}). Supports unit literals (10kb, 7d).",
-      "stat [recursively] [\"<path-or-glob>\"]",
+      "Inspect rich file metadata ({path, name, ext, size, age, modified, dir}). Supports `-r` / `recursively` and unit literals (10kb, 7d).",
+      "stat [-r | recursively] [\"<path-or-glob>\"]",
       "  stat \"src\", sort size descending, take 5 lines, table.\n"
-      "  stat recursively \"src/*.c\", take where each's size > 10kb, table.\n"
+      "  stat -r \"src\", take where each's size > 10kb, table.\n"
       "  every file \"src/*\" where each's ext == \"h\": print each's name." },
     { "view", "Dev Tools (replaces bat / less)",
       "Syntax-highlighted file viewer with line numbers and interactive terminal paging.",

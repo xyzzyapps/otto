@@ -111,6 +111,19 @@ read "access.log", tally, table.
 watch file "src": run "zig build".
 ```
 
+### 11. Asynchronous Job Control (replaces `&`, `jobs`, `fg`, `kill`)
+```bash
+# Launch a background process and track its PID/job ID
+background run "python -m http.server 8080"
+
+# List active jobs in a formatted terminal table
+jobs, table.
+
+# Resume job 1 in foreground or terminate
+resume 1.
+kill 1.
+```
+
 ---
 
 ## Quick Start
@@ -125,7 +138,7 @@ zig cc -Isrc -Ivendor/sqlite3 $files vendor/sqlite3/libsqlite3.a -lwininet -o ot
 
 #### Option 1: Portable Pure C Test Runner (Cross-Platform, No PowerShell Needed)
 ```bash
-# Compile and run the unified C test suite (all 24 tests)
+# Compile and run the unified C test suite (all 25 tests)
 zig cc tests/test_runner.c -o test_runner.exe
 ./test_runner.exe
 ```
@@ -138,7 +151,7 @@ pwsh -File tests/run_master_tests.ps1
 # 7 Modern Capabilities Tests
 pwsh -File tests/test_new_features.ps1
 ```
-*Output: `TEST RESULTS: 24 / 24 PASSED (100% SUCCESS RATE)`*
+*Output: `TEST RESULTS: 25 / 25 PASSED (100% SUCCESS RATE)`*
 
 ### Run Interactive Shell (Starship Prompt + Ghost Autocomplete)
 ```powershell

@@ -884,6 +884,14 @@
         <p>Turn any <code>.otto</code> script into a standalone, portable, zero-dependency executable. Distribute standalone tools without installing any runtime.</p>
         <div class="feature-snippet">compile "build_tool.otto" into "./build_tool".</div>
       </div>
+
+      <!-- 9. Process & Job Control -->
+      <div class="feature-card">
+        <div class="card-icon">⚙️</div>
+        <h3>Process & Job Control</h3>
+        <p>Spawn background tasks asynchronously with <code>background run</code>, inspect active jobs with <code>jobs, table.</code>, bring them to the foreground with <code>resume</code>, or terminate with <code>kill</code>.</p>
+        <div class="feature-snippet">background run "server" &bull; jobs, table. &bull; kill 1.</div>
+      </div>
     </div>
   </section>
 
@@ -1097,6 +1105,17 @@
         cmdHtml: 'otto -c \'<span class="syn-verb">compile</span> <span class="syn-str">"app.otto"</span> <span class="syn-verb">into</span> <span class="syn-str">"./app"</span>.\'',
         output: "[Compiled app.otto into standalone native binary ./app.exe]\n[Executable size: 2.9 MB. Zero external runtime dependencies.]",
         explain: "Embeds compiled 64-bit bytecode directly into the executable footer with magic header OTTO1. The resulting binary runs independently on machines without otto installed."
+      },
+      {
+        id: "job-control",
+        tag: "JOBS",
+        title: "Process & Job Control",
+        desc: "Spawn background tasks, monitor active jobs as a table, and terminate.",
+        promptDir: "~/sys",
+        cmdRaw: 'otto -c \'background run "ping 127.0.0.1". jobs, table. kill 1.\'',
+        cmdHtml: 'otto -c \'<span class="syn-adv">background</span> <span class="syn-verb">run</span> <span class="syn-str">"ping 127.0.0.1"</span>. <span class="syn-verb">jobs</span><span class="syn-pipe">,</span> <span class="syn-verb">table</span>. <span class="syn-verb">kill</span> <span class="syn-num">1</span>.\'',
+        output: "[Job 1 started: PID 18402] ping 127.0.0.1\n┌──────┬───────┬────────────────┬────────────┐\n│ id   │ pid   │ command        │ status     │\n├──────┼───────┼────────────────┼────────────┤\n│ 1    │ 18402 │ ping 127.0.0.1 │ Terminated │\n└──────┴───────┴────────────────┴────────────┘",
+        explain: "The background adverb spawns the task asynchronously and registers it with the internal job controller. 'jobs, table.' lists active jobs, and 'kill 1.' terminates the job."
       }
     ];
 

@@ -8,6 +8,7 @@
 
 // Run external command through $PATH with ACC piped to stdin, stdout captured into out_acc
 bool posix_run_command(const char *cmd_line, Value stdin_val, Value *out_acc, Value *out_err, Arena *arena);
+bool posix_spawn_background(const char *cmd_line, int *out_pid, void **out_handle);
 
 // Incremental build check: returns true if target is stale or missing compared to src
 bool posix_build_needs_rebuild(const char *target, const char *src);

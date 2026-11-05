@@ -469,8 +469,8 @@ bool bc_compile_program(BytecodeEmitter *be, ASTNode *program) {
     size_t total = program->as.program.count;
 
     // Check for Implicit Stdin Pipeline Loop:
-    // If explicitly requested via -n/--stdin flag, or running with piped stdin in a one-liner:
-    if ((be->stdin_loop || (be->is_one_liner && !tui_is_interactive())) && total == 1 && program->as.program.items[0]->type == AST_PIPE) {
+    // When explicitly enabled via -n / --stdin flag:
+    if (be->stdin_loop && total == 1 && program->as.program.items[0]->type == AST_PIPE) {
         ASTNode *pipe = program->as.program.items[0];
         if (pipe->as.pipe.count > 0) {
             ASTNode *c0 = pipe->as.pipe.clauses[0];

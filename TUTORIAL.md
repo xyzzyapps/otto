@@ -30,6 +30,8 @@ This tutorial covers every feature of `otto` from basic pipeline ergonomics to a
 16. [Agentless Fleet Orchestration (`at` Preposition)](#16-agentless-fleet-orchestration-at-preposition)
 17. [Interactive Login Shell Ergonomics](#17-interactive-login-shell-ergonomics)
 18. [Real-World Production Recipes](#18-real-world-production-recipes)
+19. [The 7 Modern CLI Capabilities](#19-the-7-modern-cli-capabilities)
+20. [Process & Job Control (`background`, `jobs`, `resume`, `kill`)](#20-process--job-control-background-jobs-resume-kill)
 
 ---
 
@@ -556,4 +558,61 @@ Replaces `starship` and `fish` autosuggestions:
   > 
   ```
 - **Inline Ghost Text:** Automatically suggests matching commands from history in dim gray text as you type. Press `Right Arrow` or `Tab` to accept.
+
+---
+
+## 20. Process & Job Control (`background`, `jobs`, `resume`, `kill`)
+
+`otto` replaces legacy Unix background operators (`&`, `nohup`), process status listings (`ps`, `jobs`), and foregrounding commands (`fg`, `kill`) with first-class zero-filler sentence verbs:
+
+### 20.1 Launching Background Tasks (`background run`)
+Use the `background` adverb before `run` to spawn long-running child processes asynchronously without blocking the shell:
+```powershell
+background run "python -m http.server 8080".
+```
+The shell registers the job, assigns an internal sequential `id` and OS `pid`, and returns a structured record:
+```
+[Job 1 started: PID 17402] python -m http.server 8080
+```
+
+### 20.2 Inspecting Background Jobs (`jobs`)
+The `jobs` verb returns a stream list of active and recent background tasks:
+```powershell
+# Print raw list of jobs
+jobs, print.
+
+# Render structured job table with PID, status, and command
+jobs, table.
+```
+Output:
+```
++------+-------+------------------------------+---------+
+| id   | pid   | command                      | status  |
++======+=======+==============================+=========+
+| 1    | 17402 | python -m http.server 8080   | Running |
++------+-------+------------------------------+---------+
+```
+
+### 20.3 Bringing Jobs to Foreground (`resume`)
+To wait for a background job to finish and bring its execution to the foreground:
+```powershell
+# Wait for job 1 to complete
+resume 1.
+
+# Resume the most recent job
+resume.
+```
+
+### 20.4 Terminating Jobs and Processes (`kill`)
+Terminate background tasks by job ID, OS PID, or by piping from fuzzy selection:
+```powershell
+# Terminate job 1
+kill 1.
+
+# Terminate process by PID directly
+kill 17402.
+
+# Interactive fuzzy search and termination
+every process: pick, kill.
+```
 

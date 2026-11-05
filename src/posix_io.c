@@ -139,6 +139,45 @@ bool posix_run_command(const char *cmd_line, Value stdin_val, Value *out_acc, Va
 #endif
 }
 
+bool posix_spawn_background(const char *cmd_line, int *out_pid, void **out_handle) {
+    if (!cmd_line || !cmd_line[0]) return false;
+#ifdef _WIN32
+    char cmd_buf[2048];
+    char normalized[2048];
+    strncpy(normalized, cmd_line, sizeof(normalized) - 1);
+    normalized[sizeof(normalized) - 1] = '\0';
+    if (normalized[0] == '.' && normalized[1] == '/') {
+        normalized[1] = '\\';
+    }
+    snprintf(cmd_buf, sizeof(cmd_buf), "cmd.exe /c %s", normalized);
+
+    STARTUPINFOA si;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&pi, sizeof(pi));
+
+    if (!CreateProcessA(NULL, cmd_buf, NULL, NULL, FALSE, CREATE_NEW_PROCESS_GROUP, NULL, NULL, &si, &pi)) {
+        return false;
+    }
+    CloseHandle(pi.hThread);
+    if (out_pid) *out_pid = (int)pi.dwProcessId;
+    if (out_handle) *out_handle = (void *)pi.hProcess;
+    return true;
+#else
+    pid_t pid = fork();
+    if (pid < 0) return false;
+    if (pid == 0) {
+        setsid();
+        execl("/bin/sh", "sh", "-c", cmd_line, (char *)NULL);
+        _exit(127);
+    }
+    if (out_pid) *out_pid = (int)pid;
+    if (out_handle) *out_handle = (void *)(intptr_t)pid;
+    return true;
+#endif
+}
+
 bool posix_build_needs_rebuild(const char *target, const char *src) {
     struct stat st_tgt, st_src;
     char tgt_path[512];

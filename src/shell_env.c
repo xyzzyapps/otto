@@ -11,6 +11,8 @@
 #define getcwd _getcwd
 #else
 #include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
 #endif
 
 // Directory Ring Buffer & Frecency Table
@@ -117,18 +119,25 @@ Value shell_jump(const char *keyword, Arena *arena) {
     }
 
     // 2. Fallback: check if direct directory
+#ifdef _WIN32
     struct _stat st;
     if (_stat(keyword, &st) == 0 && (st.st_mode & _S_IFDIR)) {
         char full[512] = "";
-#ifdef _WIN32
         _fullpath(full, keyword, sizeof(full));
-#else
-        realpath(keyword, full);
-#endif
         char *target = arena_strdup(arena, full[0] ? full : keyword);
         shell_cd(target, arena);
         return val_slice(target, strlen(target));
     }
+#else
+    struct stat st;
+    if (stat(keyword, &st) == 0 && S_ISDIR(st.st_mode)) {
+        char full[512] = "";
+        realpath(keyword, full);
+        char *target = arena_strdup(arena, full[0] ? full : keyword);
+        shell_cd(target, arena);
+        return val_slice(target, strlen(target));
+    }
+#endif
 
     return val_nil();
 }
@@ -149,6 +158,26 @@ int shell_add_job(int pid, const char *cmd, void *handle) {
 }
 
 Value shell_list_jobs(Arena *arena) {
+    // Refresh background job status before listing
+    for (size_t i = 0; i < g_job_count; i++) {
+        if (strcmp(g_jobs[i].status, "Running") == 0) {
+#ifdef _WIN32
+            if (g_jobs[i].process_handle) {
+                DWORD code = 0;
+                if (GetExitCodeProcess((HANDLE)g_jobs[i].process_handle, &code) && code != STILL_ACTIVE) {
+                    strcpy(g_jobs[i].status, "Done");
+                }
+            }
+#else
+            int st = 0;
+            pid_t res = waitpid((pid_t)g_jobs[i].pid, &st, WNOHANG);
+            if (res > 0) {
+                strcpy(g_jobs[i].status, "Done");
+            }
+#endif
+        }
+    }
+
     Value list = val_list_create(arena, g_job_count > 0 ? g_job_count : 4);
     for (size_t i = 0; i < g_job_count; i++) {
         Value jmap = val_map_create(arena, 4);
@@ -169,7 +198,31 @@ bool shell_resume_job(int job_id, bool background) {
                 WaitForSingleObject((HANDLE)g_jobs[i].process_handle, INFINITE);
                 strcpy(g_jobs[i].status, "Done");
             }
+#else
+            if (!background) {
+                waitpid((pid_t)g_jobs[i].pid, NULL, 0);
+                strcpy(g_jobs[i].status, "Done");
+            }
 #endif
+            return true;
+        }
+    }
+    return false;
+}
+
+bool shell_kill_job(int job_or_pid) {
+    for (size_t i = 0; i < g_job_count; i++) {
+        if (g_jobs[i].id == job_or_pid || g_jobs[i].pid == job_or_pid) {
+#ifdef _WIN32
+            if (g_jobs[i].process_handle) {
+                TerminateProcess((HANDLE)g_jobs[i].process_handle, 1);
+                CloseHandle((HANDLE)g_jobs[i].process_handle);
+                g_jobs[i].process_handle = NULL;
+            }
+#else
+            kill((pid_t)g_jobs[i].pid, SIGTERM);
+#endif
+            strcpy(g_jobs[i].status, "Terminated");
             return true;
         }
     }

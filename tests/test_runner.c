@@ -709,20 +709,35 @@ static bool test_pronoun_registers(char *err, size_t err_sz) {
     return true;
 }
 
-// Test 24: Implicit Stdin Pipeline Loop
+// Test 24: Implicit Stdin Pipeline Loop (-n flag)
 static bool test_implicit_stdin_loop(char *err, size_t err_sz) {
     write_file("test_in.txt", "apple 100\nbanana 200\n");
     char cmd[512];
 #ifdef _WIN32
-    snprintf(cmd, sizeof(cmd), "%s -c \"print 1st word.\" < test_in.txt", g_bin);
+    snprintf(cmd, sizeof(cmd), "%s -n -c \"print 1st word.\" < test_in.txt", g_bin);
 #else
-    snprintf(cmd, sizeof(cmd), "%s -c \"print 1st word.\" < test_in.txt", g_bin);
+    snprintf(cmd, sizeof(cmd), "%s -n -c \"print 1st word.\" < test_in.txt", g_bin);
 #endif
     char *out = run_cmd(cmd, NULL);
     remove_file("test_in.txt");
 
     bool ok = (strstr(out, "apple") != NULL && strstr(out, "banana") != NULL);
     if (!ok) snprintf(err, err_sz, "Implicit stdin loop failed: expected apple and banana, got '%s'", out);
+    free(out);
+    return ok;
+}
+
+// Test 25: Job Control (background, jobs, kill)
+static bool test_job_control(char *err, size_t err_sz) {
+    char cmd[512];
+#ifdef _WIN32
+    snprintf(cmd, sizeof(cmd), "%s -c \"background run \\\"ping -n 10 127.0.0.1\\\". kill 1. jobs, table.\"", g_bin);
+#else
+    snprintf(cmd, sizeof(cmd), "%s -c \"background run \\\"sleep 10\\\". kill 1. jobs, table.\"", g_bin);
+#endif
+    char *out = run_cmd(cmd, NULL);
+    bool ok = (strstr(out, "Terminated") != NULL || strstr(out, "Job 1 started") != NULL);
+    if (!ok) snprintf(err, err_sz, "Job control failed: expected 'Terminated' or 'Job 1 started', got '%s'", out);
     free(out);
     return ok;
 }
@@ -756,7 +771,7 @@ int main(int argc, char **argv) {
     }
 
     printf("\033[1;36m==========================================================\033[0m\n");
-    printf("\033[1;36mOTTO UNIFIED PORTABLE C TEST RUNNER (ALL 24 TESTS)\033[0m\n");
+    printf("\033[1;36mOTTO UNIFIED PORTABLE C TEST RUNNER (ALL 25 TESTS)\033[0m\n");
     printf("\033[1;36mTarget Binary: %s\033[0m\n", g_bin);
     printf("\033[1;36m==========================================================\033[0m\n");
 
@@ -785,10 +800,11 @@ int main(int argc, char **argv) {
     run_test("Dataframe Group Aggregations (tally & group by)", test_dataframe_aggregations);
     run_test("Starship-Style Prompt & REPL", test_starship_repl);
 
-    // Natural Language One-Liner Ergonomics (22-24)
+    // Natural Language One-Liner Ergonomics & Job Control (22-25)
     run_test("Zero-preposition positional argument syntax (replace, split, sort)", test_zero_prepositions);
     run_test("Pronoun registers 'that' and 'them'", test_pronoun_registers);
     run_test("Implicit Stdin Pipeline Loop", test_implicit_stdin_loop);
+    run_test("Job Control (background, jobs, kill)", test_job_control);
 
     printf("\n\033[1;36m==========================================================\033[0m\n");
     if (g_passed == g_total) {

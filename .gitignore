@@ -1,4 +1,6 @@
 # Build artifacts & executables
+dist/
+otto-*
 *.exe
 *.o
 *.obj

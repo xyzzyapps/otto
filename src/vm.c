@@ -22,6 +22,13 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#define _POSIX_C_SOURCE 199309L
+#define _XOPEN_SOURCE 700
+#include <unistd.h>
+#include <time.h>
+#include <signal.h>
+#include <sys/wait.h>
 #endif
 
 static uint64_t get_watch_mtime(const char *path) {
@@ -977,6 +984,24 @@ void vm_run(VM *vm) {
                         frame->acc = val_cstr(cmd);
                         break;
                     }
+                    if ((inst.adverbs & (ADV_BACKGROUND | (1 << 5))) != 0) {
+                        int pid = 0;
+                        void *handle = NULL;
+                        if (posix_spawn_background(cmd, &pid, &handle)) {
+                            int jid = shell_add_job(pid, cmd, handle);
+                            Value jmap = val_map_create(&vm->iter_arena, 4);
+                            val_map_set_str(&jmap, "id", val_int(jid), &vm->iter_arena);
+                            val_map_set_str(&jmap, "pid", val_int(pid), &vm->iter_arena);
+                            val_map_set_str(&jmap, "status", val_cstr("Running"), &vm->iter_arena);
+                            val_map_set_str(&jmap, "command", val_cstr(cmd), &vm->iter_arena);
+                            frame->acc = jmap;
+                            printf("[Job %d started: PID %d] %s\n", jid, pid, cmd);
+                            fflush(stdout);
+                        } else {
+                            frame->err = val_cstr("Failed to spawn background job");
+                        }
+                        break;
+                    }
                     Value out_val = val_nil();
                     Value out_err = val_nil();
                     posix_run_command(cmd, val_nil(), &out_val, &out_err, &vm->iter_arena);
@@ -1090,6 +1115,39 @@ void vm_run(VM *vm) {
             case OP_VERB_RESUME: {
                 bool bg = (inst.adverbs & ADV_BACKGROUND) != 0;
                 shell_resume_job(inst.operand, bg);
+                break;
+            }
+
+            case OP_VERB_KILL: {
+                int target_id = (int)inst.operand;
+                if (target_id == 0 && frame->acc.type == VAL_MAP) {
+                    Value pid_val = val_nil();
+                    if (val_map_get_str(frame->acc, "pid", &pid_val) && pid_val.type == VAL_INT) {
+                        target_id = (int)pid_val.as.i64;
+                    } else if (val_map_get_str(frame->acc, "id", &pid_val) && pid_val.type == VAL_INT) {
+                        target_id = (int)pid_val.as.i64;
+                    }
+                } else if (target_id == 0 && frame->acc.type == VAL_INT) {
+                    target_id = (int)frame->acc.as.i64;
+                }
+                if (target_id > 0) {
+                    bool ok = shell_kill_job(target_id);
+                    frame->acc = val_bool(ok);
+                    if (!ok) {
+#ifdef _WIN32
+                        HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)target_id);
+                        if (h) {
+                            TerminateProcess(h, 1);
+                            CloseHandle(h);
+                            frame->acc = val_bool(true);
+                        }
+#else
+                        if (kill((pid_t)target_id, SIGTERM) == 0) {
+                            frame->acc = val_bool(true);
+                        }
+#endif
+                    }
+                }
                 break;
             }
 

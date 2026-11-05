@@ -22,6 +22,7 @@ typedef struct ShellJob {
 Value shell_list_jobs(Arena *arena);
 bool shell_resume_job(int job_id, bool background);
 int shell_add_job(int pid, const char *cmd, void *handle);
+bool shell_kill_job(int job_or_pid);
 
 // Startup & ~/.ottorc execution
 void shell_load_rc(void);

@@ -8,8 +8,13 @@ static void parser_error(Parser *p, const char *msg) {
     p->has_error = true;
     p->error_line = p->current.line;
     p->error_col = p->current.col;
-    snprintf(p->error_msg, sizeof(p->error_msg), "%s at line %d, col %d (near '%.*s')",
-             msg, p->current.line, p->current.col, (int)p->current.lexeme.len, p->current.lexeme.ptr);
+    if (p->current.lexeme.len > 0) {
+        snprintf(p->error_msg, sizeof(p->error_msg), "%s at line %d, col %d (near '%.*s')",
+                 msg, p->current.line, p->current.col, (int)p->current.lexeme.len, p->current.lexeme.ptr);
+    } else {
+        snprintf(p->error_msg, sizeof(p->error_msg), "%s at line %d, col %d (near %s)",
+                 msg, p->current.line, p->current.col, token_type_name(p->current.type));
+    }
 }
 
 static Token advance(Parser *p) {
@@ -97,10 +102,20 @@ static ASTNode *parse_primary(Parser *p) {
         return node;
     }
 
+    // Unary minus: -expr
+    if (match(p, TOK_MINUS)) {
+        ASTNode *operand = parse_postfix(p);
+        ASTNode *node = ast_create(p->arena, AST_EXPR_UNARY, line, col);
+        node->as.unary.op = TOK_MINUS;
+        node->as.unary.operand = operand;
+        return node;
+    }
+
     // Literals
     if (match(p, TOK_NUMBER)) {
         ASTNode *node = ast_create(p->arena, AST_EXPR_LITERAL, line, col);
-        node->as.lit.val = p->previous.lit.i64 ? val_int(p->previous.lit.i64) : val_float(p->previous.lit.f64);
+        bool has_dot = (memchr(p->previous.lexeme.ptr, '.', p->previous.lexeme.len) != NULL);
+        node->as.lit.val = has_dot ? val_float(p->previous.lit.f64) : val_int(p->previous.lit.i64);
         return node;
     }
     if (match(p, TOK_STRING)) {
@@ -158,12 +173,27 @@ static ASTNode *parse_primary(Parser *p) {
         return node;
     }
 
-    // Bracket sub-expression or thunk: [ ... ]
+    // List literal: [ expr, ... ]
     if (match(p, TOK_LBRACKET)) {
-        ASTNode *body = parse_pipe(p);
-        consume(p, TOK_RBRACKET, "Expected ']'");
-        ASTNode *node = ast_create(p->arena, AST_EXPR_THUNK, line, col);
-        node->as.thunk.body = body;
+        ASTNode *node = ast_create(p->arena, AST_EXPR_LIST, line, col);
+        size_t cap = 4;
+        ASTNode **items = (ASTNode **)arena_alloc(p->arena, cap * sizeof(ASTNode *));
+        size_t count = 0;
+        while (!check(p, TOK_RBRACKET) && !check(p, TOK_EOF)) {
+            ASTNode *item = parse_expr(p);
+            if (!item) break;
+            if (count >= cap) {
+                cap *= 2;
+                ASTNode **new_items = (ASTNode **)arena_alloc(p->arena, cap * sizeof(ASTNode *));
+                memcpy(new_items, items, count * sizeof(ASTNode *));
+                items = new_items;
+            }
+            items[count++] = item;
+            if (!match(p, TOK_COMMA)) break;
+        }
+        consume(p, TOK_RBRACKET, "Expected ']' after list");
+        node->as.list.items = items;
+        node->as.list.count = count;
         return node;
     }
 
@@ -305,23 +335,32 @@ static ASTNode *parse_command(Parser *p) {
 
     uint16_t adverbs = parse_adverbs(p);
 
-    // If starting with a literal (e.g. `0 into s.`), treat as implicit ACC load
-    if (check(p, TOK_NUMBER) || check(p, TOK_STRING) || check(p, TOK_LBRACE)) {
+    // If starting with an expression (e.g. `0 into s.`, `"a,b", split ","`, `[1, 2], chart.`, `that + 1 into x.`)
+    if (check(p, TOK_NUMBER) || check(p, TOK_STRING) || check(p, TOK_BOOL) ||
+        check(p, TOK_NIL) || check(p, TOK_LBRACE) || check(p, TOK_LBRACKET) ||
+        check(p, TOK_LPAREN) || (p->current.type >= TOK_REG_IT && p->current.type <= TOK_REG_PREVIOUS)) {
         ASTNode *lit_expr = parse_expr(p);
         ASTNode *node = ast_create(p->arena, AST_CLAUSE_CMD, line, col);
-        node->as.cmd.verb = TOK_VERB_READ; // or implicit load
+        node->as.cmd.verb = TOK_EOF; // pure expression / binding clause
         node->as.cmd.adverbs = adverbs;
         node->as.cmd.direct_arg = lit_expr;
 
         // Parse preposition slots
         while (token_is_prep(p->current.type)) {
             Token prep_tok = advance(p);
-            ASTNode *prep_expr = parse_expr(p);
+            ASTNode *prep_expr = (prep_tok.type == TOK_PREP_DISCARD) ? NULL : parse_expr(p);
             if (node->as.cmd.prep_count < 8) {
                 node->as.cmd.preps[node->as.cmd.prep_count].prep = prep_tok.type;
                 node->as.cmd.preps[node->as.cmd.prep_count].expr = prep_expr;
                 node->as.cmd.prep_count++;
             }
+        }
+        if (match(p, TOK_IF)) {
+            node->as.cmd.cond = parse_expr(p);
+            node->as.cmd.unless_cond = false;
+        } else if (match(p, TOK_UNLESS)) {
+            node->as.cmd.cond = parse_expr(p);
+            node->as.cmd.unless_cond = true;
         }
         return node;
     }
@@ -351,7 +390,7 @@ static ASTNode *parse_command(Parser *p) {
             const char *cmd_end = vtok.lexeme.ptr + vtok.lexeme.len;
 
             while (!check(p, TOK_COMMA) && !check(p, TOK_AND) && !check(p, TOK_OR) &&
-                   !check(p, TOK_DOT) && !check(p, TOK_EOF)) {
+                   !check(p, TOK_DOT) && !check(p, TOK_AMP) && !check(p, TOK_EOF)) {
                 Token arg_tok = advance(p);
                 cmd_end = arg_tok.lexeme.ptr + arg_tok.lexeme.len;
             }
@@ -423,7 +462,8 @@ static ASTNode *parse_command(Parser *p) {
         p->current.type != TOK_COMMA && p->current.type != TOK_AND &&
         p->current.type != TOK_OR && p->current.type != TOK_DOT &&
         p->current.type != TOK_COLON && p->current.type != TOK_IF &&
-        p->current.type != TOK_UNLESS && p->current.type != TOK_EOF &&
+        p->current.type != TOK_UNLESS && p->current.type != TOK_AMP &&
+        p->current.type != TOK_EOF &&
         p->current.type != TOK_RPAREN && p->current.type != TOK_RBRACKET) {
         node->as.cmd.direct_arg = parse_expr(p);
     }
@@ -480,7 +520,9 @@ static ASTNode *parse_command(Parser *p) {
 
     // Zero-preposition syntax support (let user pick positional or prepositional)
     if (node->as.cmd.prep_count == 0 && node->as.cmd.direct_arg) {
-        if (verb == TOK_VERB_SORT || verb == TOK_VERB_GROUP) {
+        if ((verb == TOK_VERB_SORT || verb == TOK_VERB_GROUP) &&
+            (node->as.cmd.direct_arg->type == AST_EXPR_VAR ||
+             node->as.cmd.direct_arg->type == AST_EXPR_LITERAL)) {
             node->as.cmd.preps[0].prep = TOK_PREP_BY;
             node->as.cmd.preps[0].expr = node->as.cmd.direct_arg;
             node->as.cmd.prep_count = 1;
@@ -492,6 +534,10 @@ static ASTNode *parse_command(Parser *p) {
             node->as.cmd.preps[0].prep = TOK_PREP_BY;
             node->as.cmd.preps[0].expr = node->as.cmd.direct_arg;
             node->as.cmd.prep_count = 1;
+        } else if (verb == TOK_VERB_JOIN || verb == TOK_VERB_INTERSECT || verb == TOK_VERB_ZIP) {
+            node->as.cmd.preps[0].prep = TOK_PREP_WITH;
+            node->as.cmd.preps[0].expr = node->as.cmd.direct_arg;
+            node->as.cmd.prep_count = 1;
         }
     }
 
@@ -500,7 +546,8 @@ static ASTNode *parse_command(Parser *p) {
         p->current.type != TOK_COMMA && p->current.type != TOK_AND &&
         p->current.type != TOK_OR && p->current.type != TOK_DOT &&
         p->current.type != TOK_COLON && p->current.type != TOK_IF &&
-        p->current.type != TOK_UNLESS && p->current.type != TOK_EOF &&
+        p->current.type != TOK_UNLESS && p->current.type != TOK_AMP &&
+        p->current.type != TOK_EOF &&
         p->current.type != TOK_RPAREN && p->current.type != TOK_RBRACKET) {
 
         OttoTokenType implicit_prep = 0;
@@ -520,6 +567,16 @@ static ASTNode *parse_command(Parser *p) {
             node->as.cmd.preps[node->as.cmd.prep_count].expr = second_arg;
             node->as.cmd.prep_count++;
         }
+    }
+
+    // Trailing adverbs (e.g. `replace "old" "new" inplace` or `sort descending`)
+    if (token_is_adverb(p->current.type)) {
+        node->as.cmd.adverbs |= parse_adverbs(p);
+    }
+
+    // Trailing '&' background operator
+    if (match(p, TOK_AMP)) {
+        node->as.cmd.adverbs |= ADV_BACKGROUND;
     }
 
     // Condition: if / unless
@@ -850,12 +907,4 @@ ASTNode *parser_parse_program(Parser *parser) {
         }
     }
     return prog;
-}
-
-ASTNode *parser_parse_pipe(Parser *parser) {
-    return parse_pipe(parser);
-}
-
-ASTNode *parser_parse_expr(Parser *parser) {
-    return parse_expr(parser);
 }

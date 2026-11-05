@@ -305,13 +305,17 @@ void tui_chart(Value items, const char *kind, FILE *out) {
     if (max_val <= 0.0) max_val = 1.0;
 
     if (kind && strcmp(kind, "bar") == 0) {
-        // Horizontal bar histogram
+        // Horizontal bar histogram with 1/8th sub-character precision
         for (size_t i = 0; i < count; i++) {
             Value it = val_list_get(items, i);
             double val = (it.type == VAL_INT) ? (double)it.as.i64 : ((it.type == VAL_FLOAT) ? it.as.f64 : 0.0);
-            int bar_len = (int)((val / max_val) * 40.0);
+            double scaled = (val / max_val) * 40.0;
+            if (scaled < 0.0) scaled = 0.0;
+            int full_blocks = (int)scaled;
+            int frac_idx = (int)((scaled - (double)full_blocks) * 8.0);
             fprintf(out, "%3zu | ", i);
-            for (int b = 0; b < bar_len; b++) fputs("█", out);
+            for (int b = 0; b < full_blocks; b++) fputs(bars[8], out);
+            if (frac_idx > 0 && frac_idx < 8) fputs(bars[frac_idx], out);
             fprintf(out, " (%g)\n", val);
         }
     } else {

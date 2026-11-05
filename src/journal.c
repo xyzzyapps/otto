@@ -45,7 +45,15 @@ void journal_begin_tx(void) {
     journal_init();
     time_t now = time(NULL);
     static int tx_counter = 1;
-    snprintf(g_current_tx_dir, sizeof(g_current_tx_dir), "%s/%ld-%04d", g_journal_root, (long)now, tx_counter++);
+#ifdef _WIN32
+    unsigned long pid = (unsigned long)GetCurrentProcessId();
+    unsigned long tick = (unsigned long)GetTickCount();
+#else
+    unsigned long pid = (unsigned long)getpid();
+    unsigned long tick = (unsigned long)clock();
+#endif
+    snprintf(g_current_tx_dir, sizeof(g_current_tx_dir), "%s/%ld-%lu-%lu-%04d",
+             g_journal_root, (long)now, pid, tick, tx_counter++);
     ensure_dir(g_current_tx_dir);
     g_in_tx = true;
 
@@ -64,16 +72,28 @@ bool journal_backup_file(const char *filepath) {
         journal_begin_tx();
     }
 
-    FILE *in = fopen(filepath, "rb");
-    if (!in) return false; // File doesn't exist yet, nothing to backup
+    char manifest_path[512];
+    snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", g_current_tx_dir);
 
-    // Create a safe sanitized backup filename inside g_current_tx_dir
+    FILE *in = fopen(filepath, "rb");
+    if (!in) {
+        // File doesn't exist yet: record __NEW__ so undo removes newly created file
+        FILE *mf = fopen(manifest_path, "a");
+        if (mf) {
+            fprintf(mf, "%s\t__NEW__\n", filepath);
+            fclose(mf);
+        }
+        return true;
+    }
+
+    // Create a safe sanitized unique backup filename inside g_current_tx_dir
     const char *base = strrchr(filepath, '/');
     if (!base) base = strrchr(filepath, '\\');
     base = base ? base + 1 : filepath;
 
+    static int bak_seq = 1;
     char backup_path[512];
-    snprintf(backup_path, sizeof(backup_path), "%s/%s.bak", g_current_tx_dir, base);
+    snprintf(backup_path, sizeof(backup_path), "%s/%04d_%s.bak", g_current_tx_dir, bak_seq++, base);
 
     FILE *out = fopen(backup_path, "wb");
     if (!out) {
@@ -90,8 +110,6 @@ bool journal_backup_file(const char *filepath) {
     fclose(out);
 
     // Append to manifest.bin: original_path \t backup_path \n
-    char manifest_path[512];
-    snprintf(manifest_path, sizeof(manifest_path), "%s/manifest.bin", g_current_tx_dir);
     FILE *mf = fopen(manifest_path, "a");
     if (mf) {
         fprintf(mf, "%s\t%s\n", filepath, backup_path);
@@ -142,6 +160,13 @@ bool journal_undo_last(void) {
         *tab = '\0';
         const char *orig_file = line;
         const char *bak_file = tab + 1;
+
+        if (strcmp(bak_file, "__NEW__") == 0) {
+            if (remove(orig_file) == 0) {
+                restored_count++;
+            }
+            continue;
+        }
 
         // Copy bak_file -> orig_file
         FILE *in = fopen(bak_file, "rb");

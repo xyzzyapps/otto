@@ -308,7 +308,7 @@ static void stringify_value_buf(Value val, char **buf, size_t *len, size_t *cap)
     }
 }
 
-char *json_stringify(Value val, Arena *arena, bool pretty) {
+char *json_stringify(Value val, Arena *arena) {
     size_t cap = 256;
     size_t len = 0;
     char *buf = (char *)malloc(cap);
@@ -404,6 +404,86 @@ Value yaml_parse(const char *yaml_str, size_t len, Arena *arena, bool *ok) {
     return is_root_list ? cur_list : root;
 }
 
-char *yaml_stringify(Value val, Arena *arena) {
-    return json_stringify(val, arena, true);
+static size_t split_csv_row(Slice line, Slice *cols, size_t max_cols, Arena *arena) {
+    size_t count = 0;
+    size_t i = 0;
+    while (i <= line.len && count < max_cols) {
+        if (i < line.len && line.ptr[i] == '"') {
+            i++; // skip opening quote
+            size_t start = i;
+            while (i < line.len && !(line.ptr[i] == '"' && (i + 1 >= line.len || line.ptr[i + 1] != '"'))) {
+                if (line.ptr[i] == '"' && i + 1 < line.len && line.ptr[i + 1] == '"') i += 2;
+                else i++;
+            }
+            size_t flen = i - start;
+            char *s = arena_strndup(arena, line.ptr + start, flen);
+            cols[count++] = (Slice){s, flen};
+            if (i < line.len && line.ptr[i] == '"') i++;
+            while (i < line.len && line.ptr[i] != ',') i++;
+            if (i < line.len && line.ptr[i] == ',') i++;
+            else break;
+        } else {
+            size_t start = i;
+            while (i < line.len && line.ptr[i] != ',') i++;
+            cols[count++] = slice_trim((Slice){line.ptr + start, i - start});
+            if (i < line.len && line.ptr[i] == ',') i++;
+            else break;
+        }
+    }
+    return count;
+}
+
+Value csv_parse(const char *csv_str, size_t len, Arena *arena) {
+    Value rows = val_list_create(arena, 16);
+    const char *p = csv_str;
+    const char *end = csv_str + len;
+
+    Slice headers[64];
+    size_t num_headers = 0;
+    bool got_header = false;
+
+    while (p < end) {
+        const char *nl = p;
+        while (nl < end && *nl != '\n') nl++;
+        Slice line = {p, (size_t)(nl - p)};
+        if (line.len > 0 && line.ptr[line.len - 1] == '\r') line.len--;
+        p = (nl < end && *nl == '\n') ? nl + 1 : nl;
+
+        if (slice_trim(line).len == 0) continue;
+
+        if (!got_header) {
+            num_headers = split_csv_row(line, headers, 64, arena);
+            for (size_t h = 0; h < num_headers; h++) {
+                char *hcopy = arena_strndup(arena, headers[h].ptr, headers[h].len);
+                headers[h] = (Slice){hcopy, headers[h].len};
+            }
+            got_header = true;
+            continue;
+        }
+
+        Slice cells[64];
+        size_t num_cells = split_csv_row(line, cells, 64, arena);
+        Value row_map = val_map_create(arena, num_headers > 0 ? num_headers : 4);
+        for (size_t c = 0; c < num_headers; c++) {
+            Slice cell = (c < num_cells) ? cells[c] : (Slice){"", 0};
+            bool i_ok = false, f_ok = false;
+            int64_t iv = slice_to_i64(cell, &i_ok);
+            Value v;
+            if (i_ok) {
+                v = val_int(iv);
+            } else if (memchr(cell.ptr, '.', cell.len) != NULL && (slice_to_f64(cell, &f_ok), f_ok)) {
+                v = val_float(slice_to_f64(cell, &f_ok));
+            } else if (slice_eq_str(cell, "true")) {
+                v = val_bool(true);
+            } else if (slice_eq_str(cell, "false")) {
+                v = val_bool(false);
+            } else {
+                char *scopy = arena_strndup(arena, cell.ptr, cell.len);
+                v = val_slice(scopy, cell.len);
+            }
+            val_map_set(&row_map, headers[c], v, arena);
+        }
+        val_list_append(&rows, row_map, arena);
+    }
+    return rows;
 }

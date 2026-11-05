@@ -61,6 +61,12 @@ bool sqlite_write_row(const char *target, Value val, bool append) {
     strncat(create_sql, ");", sizeof(create_sql) - strlen(create_sql) - 1);
     sqlite3_exec(db, create_sql, NULL, NULL, NULL);
 
+    if (!append) {
+        char clear_sql[256];
+        snprintf(clear_sql, sizeof(clear_sql), "DELETE FROM %s;", table);
+        sqlite3_exec(db, clear_sql, NULL, NULL, NULL);
+    }
+
     // 2. Insert row: INSERT INTO table (col1, col2) VALUES (?, ?)
     char insert_sql[1024];
     char values_sql[512] = "";

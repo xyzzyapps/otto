@@ -97,7 +97,8 @@ static bool read_interactive_line(char *buf, size_t max_len, const char *prev_cm
             ghost = prev_cmd + len;
         }
 
-        printf("\r\033[K\033[1;32m>\033[0m %s", buf);
+        printf("\r\033[K\033[1;32m>\033[0m ");
+        repl_print_highlighted(buf, len);
         if (ghost) {
             printf("\033[2m%s\033[0m", ghost);
             size_t glen = strlen(ghost);
@@ -134,7 +135,9 @@ static bool read_interactive_line(char *buf, size_t max_len, const char *prev_cm
 #endif
 
         if (ch == '\r' || ch == '\n') {
-            printf("\r\033[K\033[1;32m>\033[0m %s\n", buf);
+            printf("\r\033[K\033[1;32m>\033[0m ");
+            repl_print_highlighted(buf, len);
+            printf("\n");
             fflush(stdout);
             break;
         } else if (ch == '\t') {
@@ -172,24 +175,6 @@ static bool read_interactive_line(char *buf, size_t max_len, const char *prev_cm
     return true;
 }
 
-bool repl_is_pure_verb(OttoTokenType verb) {
-    switch (verb) {
-        case TOK_VERB_READ:
-        case TOK_VERB_TAKE:
-        case TOK_VERB_DROP:
-        case TOK_VERB_SPLIT:
-        case TOK_VERB_JOIN:
-        case TOK_VERB_SORT:
-        case TOK_VERB_COUNT:
-        case TOK_VERB_FILTER:
-        case TOK_VERB_TALLY:
-        case TOK_VERB_GROUP:
-            return true;
-        default:
-            return false;
-    }
-}
-
 void repl_print_highlighted(const char *input, size_t len) {
     Lexer lex;
     lexer_init(&lex, input, len, true);
@@ -197,14 +182,31 @@ void repl_print_highlighted(const char *input, size_t len) {
     Token tok;
     size_t last_pos = 0;
 
-    while ((tok = lexer_next(&lex)).type != TOK_EOF && tok.type != TOK_ERROR) {
+    while ((tok = lexer_next(&lex)).type != TOK_EOF) {
+        if (tok.type == TOK_ERROR) {
+            if (tok.lexeme.len > 0 && token_is_filler(tok.lexeme.ptr, tok.lexeme.len)) {
+                size_t tok_start = (size_t)(tok.lexeme.ptr - input);
+                if (tok_start > last_pos) {
+                    fwrite(input + last_pos, 1, tok_start - last_pos, stdout);
+                }
+                printf("\033[1;31m%.*s\033[0m", (int)tok.lexeme.len, tok.lexeme.ptr); // Red filler warning
+                last_pos = tok_start + tok.lexeme.len;
+                continue;
+            }
+            break;
+        }
+
         size_t tok_start = (size_t)(tok.lexeme.ptr - input);
-        // Print whitespace between tokens
+        if (tok.type == TOK_STRING && tok_start > 0) {
+            tok_start -= 1; // account for opening quote
+        }
         if (tok_start > last_pos) {
             fwrite(input + last_pos, 1, tok_start - last_pos, stdout);
         }
 
-        if (token_is_verb(tok.type)) {
+        if (token_is_hook(tok.type)) {
+            printf("\033[1;34m%.*s\033[0m", (int)tok.lexeme.len, tok.lexeme.ptr); // Bold blue
+        } else if (token_is_verb(tok.type)) {
             printf("\033[1;36m%.*s\033[0m", (int)tok.lexeme.len, tok.lexeme.ptr); // Bold cyan
         } else if (token_is_prep(tok.type)) {
             printf("\033[1;33m%.*s\033[0m", (int)tok.lexeme.len, tok.lexeme.ptr); // Yellow
@@ -214,6 +216,8 @@ void repl_print_highlighted(const char *input, size_t len) {
             printf("\033[1;32m%.*s\033[0m", (int)tok.lexeme.len, tok.lexeme.ptr); // Green
         } else if (tok.type == TOK_STRING) {
             printf("\033[32m\"%.*s\"\033[0m", (int)tok.lexeme.len, tok.lexeme.ptr);
+            last_pos = tok_start + tok.lexeme.len + 2;
+            continue;
         } else if (tok.type == TOK_NUMBER || tok.type == TOK_UNIT_LIT) {
             printf("\033[34m%.*s\033[0m", (int)tok.lexeme.len, tok.lexeme.ptr);
         } else {
@@ -227,42 +231,11 @@ void repl_print_highlighted(const char *input, size_t len) {
     }
 }
 
-// Live preview evaluation of pure prefix
-static void render_live_preview(VM *vm, const char *input, size_t len) {
-    if (len == 0) return;
-
-    // Check if pipeline contains pure verbs
-    Lexer lex;
-    lexer_init(&lex, input, len, true);
-    Token tok;
-    bool has_pure_verb = false;
-    bool has_impure_verb = false;
-
-    while ((tok = lexer_next(&lex)).type != TOK_EOF && tok.type != TOK_ERROR) {
-        if (token_is_verb(tok.type)) {
-            if (repl_is_pure_verb(tok.type)) {
-                has_pure_verb = true;
-            } else {
-                has_impure_verb = true;
-                break;
-            }
-        }
-    }
-
-    if (!has_pure_verb || has_impure_verb) return;
-
-    // Render dim 5-line preview
-    fprintf(stderr, "\n\033[2m--- live preview (pure) ---\033[0m\n");
-    fprintf(stderr, "\033[2m  ACC: <evaluating top 50 items...>\033[0m\n");
-    fprintf(stderr, "\033[2m---------------------------\033[0m\n");
-    fprintf(stderr, "\033[3A\r");
-}
-
 void repl_run(VM *vm) {
     printf("\033[1;36motto\033[0m v1.0 [Zero-Filler Automation Shell & Systems Language]\n");
     printf("Type commands, one-liners, or 'exit' to quit.\n\n");
 
-    shell_load_rc();
+    shell_load_rc(vm);
 
     char line_buf[2048];
     double last_ms = 0.0;
@@ -280,13 +253,13 @@ void repl_run(VM *vm) {
         }
 
         if (len == 0) continue;
-        if (strcmp(line_buf, "exit") == 0) break;
+        if (strcmp(line_buf, "exit") == 0 || strcmp(line_buf, "exit.") == 0) break;
 
-        // Save previous command for `repeat previous`
-        vm->previous_cmd = val_slice(arena_strdup(&vm->perm_arena, line_buf), len);
+        size_t raw_len = len;
+        bool is_repeat_cmd = (strncasecmp(line_buf, "repeat", 6) == 0 && (line_buf[6] == '\0' || line_buf[6] == ' ' || line_buf[6] == '.'));
 
-        // Implicit Period (Task 8.1): If not ending in '.' or ':' or '[', append '.'
-        if (line_buf[len - 1] != '.' && line_buf[len - 1] != ':' && line_buf[len - 1] != '[') {
+        // Implicit Period (Task 8.1): If not ending in '.' or ':' or ']', append '.'
+        if (line_buf[len - 1] != '.' && line_buf[len - 1] != ':' && line_buf[len - 1] != ']') {
             line_buf[len++] = '.';
             line_buf[len] = '\0';
         }
@@ -305,9 +278,8 @@ void repl_run(VM *vm) {
         }
 
         BytecodeEmitter be;
-        bc_init(&be, &parse_arena);
+        bc_init(&be, &vm->perm_arena);
         if (bc_compile_program(&be, prog)) {
-            // Load and run in VM
             vm->code = be.code;
             vm->code_len = be.count;
             vm->constants = be.constants;
@@ -322,7 +294,6 @@ void repl_run(VM *vm) {
             struct timespec ts0, ts1;
             clock_gettime(CLOCK_MONOTONIC, &ts0);
 #endif
-            extern void vm_run(VM *vm);
             vm_run(vm);
 
 #ifdef _WIN32
@@ -332,6 +303,10 @@ void repl_run(VM *vm) {
             clock_gettime(CLOCK_MONOTONIC, &ts1);
             last_ms = (ts1.tv_sec - ts0.tv_sec) * 1000.0 + (ts1.tv_nsec - ts0.tv_nsec) / 1000000.0;
 #endif
+        }
+
+        if (!is_repeat_cmd) {
+            vm_record_history(vm, (Slice){line_buf, raw_len});
         }
 
         arena_free(&parse_arena);

@@ -53,21 +53,31 @@ bool ffi_invoke(const char *verb_name, Value arg, Value *out_result, Arena *aren
     for (size_t i = 0; i < g_binding_count; i++) {
         if (strcmp(g_bindings[i].verb_name, verb_name) == 0) {
             if (!g_bindings[i].fn_ptr) {
-                // If library failed to load, return mock / passthrough
                 if (out_result) *out_result = arg;
                 return true;
             }
 
-            // Generic signature call: e.g. fn(ptr, len) or fn(int)
-            typedef void *(*GenericFn)(const void *, size_t);
-            GenericFn fn = (GenericFn)g_bindings[i].fn_ptr;
             if (arg.type == VAL_SLICE) {
-                void *res = fn(arg.as.slice.ptr, arg.as.slice.len);
-                if (out_result) *out_result = val_slice((const char *)res, arg.as.slice.len);
+                char *cstr = slice_to_cstr(arg.as.slice, arena);
+                typedef int64_t (*StrFn)(const char *, size_t);
+                StrFn fn = (StrFn)g_bindings[i].fn_ptr;
+                int64_t res = fn(cstr, arg.as.slice.len);
+                fflush(stdout);
+                if (out_result) *out_result = val_int(res);
             } else if (arg.type == VAL_INT) {
                 typedef int64_t (*IntFn)(int64_t);
                 IntFn ifn = (IntFn)g_bindings[i].fn_ptr;
                 int64_t res = ifn(arg.as.i64);
+                if (out_result) *out_result = val_int(res);
+            } else if (arg.type == VAL_FLOAT) {
+                typedef double (*FltFn)(double);
+                FltFn ffn = (FltFn)g_bindings[i].fn_ptr;
+                double res = ffn(arg.as.f64);
+                if (out_result) *out_result = val_float(res);
+            } else {
+                typedef int64_t (*VoidFn)(void);
+                VoidFn vfn = (VoidFn)g_bindings[i].fn_ptr;
+                int64_t res = vfn();
                 if (out_result) *out_result = val_int(res);
             }
             return true;

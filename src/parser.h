@@ -24,7 +24,5 @@ typedef struct Parser {
 
 void parser_init(Parser *parser, const char *source, size_t length, bool interactive, Arena *arena);
 ASTNode *parser_parse_program(Parser *parser);
-ASTNode *parser_parse_pipe(Parser *parser);
-ASTNode *parser_parse_expr(Parser *parser);
 
 #endif // OTTO_PARSER_H

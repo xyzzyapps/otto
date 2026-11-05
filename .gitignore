@@ -10,8 +10,6 @@ otto-*
 *.so
 *.dylib
 otto
-shx
-dud
 test_runner
 test-bin*
 
@@ -41,13 +39,11 @@ fruits.txt
 test_watch_dir/
 test_git_dir/
 test_*.otto
-test_*.shx
 test_users.json
 user
 
 # Transaction journal
 .otto/
-.shx/
 
 # OS and Editor metadata
 .DS_Store

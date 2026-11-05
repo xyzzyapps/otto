@@ -28,7 +28,7 @@ bool bundle_has_embedded_bytecode(const char *exe_path, uint8_t **out_bytecode, 
     // Check last 8 bytes for MAGIC
     fseek(fp, file_size - 8, SEEK_SET);
     uint64_t magic = 0;
-    if (fread(&magic, 1, 8, fp) != 8 || (magic != OTTO_MAGIC && magic != SHX_MAGIC)) {
+    if (fread(&magic, 1, 8, fp) != 8 || magic != OTTO_MAGIC) {
         fclose(fp);
         return false;
     }
@@ -120,8 +120,7 @@ bool bundle_load_into_vm(VM *vm, const uint8_t *data, size_t len) {
     offset += num_inst * sizeof(Instruction);
 
     vm->const_count = num_const;
-    vm->const_capacity = num_const + 8;
-    vm->constants = (Value *)arena_alloc(&vm->perm_arena, vm->const_capacity * sizeof(Value));
+    vm->constants = (Value *)arena_alloc(&vm->perm_arena, (num_const + 8) * sizeof(Value));
 
     for (size_t i = 0; i < num_const; i++) {
         uint8_t type = data[offset++];
@@ -153,7 +152,7 @@ bool bundle_load_into_vm(VM *vm, const uint8_t *data, size_t len) {
     return true;
 }
 
-bool bundle_compile_script(const char *script_path, const char *out_binary_path, const char *target, const char *self_exe) {
+bool bundle_compile_script(const char *script_path, const char *out_binary_path, const char *self_exe) {
     // 1. Read script file
     FILE *sfp = fopen(script_path, "rb");
     if (!sfp) return false;

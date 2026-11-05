@@ -8,8 +8,7 @@
 
 // VM Opcodes
 typedef enum {
-    OP_NOP = 0,
-    OP_HALT,
+    OP_HALT = 0,
 
     // Register / Local Moves
     OP_LOAD_CONST,    // operand: const pool idx -> ACC
@@ -18,15 +17,14 @@ typedef enum {
     OP_LOAD_GLOBAL,   // operand: const pool idx (name) -> ACC
     OP_STORE_GLOBAL,  // operand: const pool idx (name) <- ACC
     OP_LOAD_REG,      // operand: reg type -> ACC
-    OP_STORE_REG,     // operand: reg type <- ACC
     OP_RESET_ITER,    // resets iter_arena
     OP_SAVE_THAT,     // saves frame->acc into vm->that_val
+    OP_RECORD_HIST,   // operand: const pool idx of sentence text
+    OP_DISCARD,       // clears ACC and ERR (for `discard` preposition)
 
-    // Stack / ACC manipulation for conjunctions
+    // Stack manipulation for conjunctions & expressions
     OP_PUSH_ACC,      // Push ACC to internal stack
     OP_POP_ACC,       // Pop from stack to ACC
-    OP_SWAP_ACC,      // Swap ACC with top of stack
-    OP_MERGE_ACC,     // Merge ACC with top of stack (for tee `and`)
 
     // Flow Control
     OP_JUMP,          // operand: target IP
@@ -34,19 +32,24 @@ typedef enum {
     OP_JUMP_IF_TRUE,  // operand: target IP if ACC is truthy
     OP_JUMP_IF_OK,    // operand: target IP if ERR is nil and ACC truthy (for `or`)
 
-    // Function Calls & TCO
+    // Function Calls, Hooks & TCO
     OP_CALL,          // operand: symbol or func idx
     OP_TAILCALL,      // operand: entry IP (overwrites locals, jumps without growing stack)
     OP_RETURN,        // return from current frame
     OP_BUILD_CHECK,   // operand: jump IP if up to date, slot_mask: src_idx, adverbs: tgt_idx
+    OP_EXTERN_REG,    // adverbs: lib_idx, slot_mask: sym_idx, operand: verb_idx
+    OP_ON_HANDLER,    // scanner: 1=failure, 2=interrupt; operand: handler IP
 
-    // Expressions & Math
+    // Expressions, Collections & Predicate Filtering
+    OP_UNARY_OP,      // operand: operator type (-)
     OP_BINARY_OP,     // operand: operator type (==, !=, <, +, -, *, /, %)
     OP_GENITIVE_GET,  // operand: const pool idx of property name
     OP_MAP_CREATE,    // creates map
     OP_MAP_SET,       // operand: const pool idx of key
-    OP_LIST_CREATE,
-    OP_LIST_APPEND,
+    OP_LIST_CREATE,   // operand: initial capacity -> ACC
+    OP_LIST_APPEND,   // appends ACC onto list popped from stack -> ACC
+    OP_FILTER_START,  // begins `where` filter loop over ACC list; operand: end IP if empty
+    OP_FILTER_NEXT,   // adverbs: 1=invert(drop); operand: loop_start IP
 
     // Verbs (Built-in Shell Operations)
     OP_VERB_READ,
@@ -87,13 +90,13 @@ typedef enum {
     OP_VERB_JOBS,
     OP_VERB_RESUME,
     OP_VERB_REPEAT,
-    OP_VERB_REPLY,
 
-    // Loop header / stream step
+    // Loop header / stream step / timers
     OP_STREAM_START,  // starts stream
     OP_STREAM_NEXT,   // fetches next CUR; if EOF jumps to operand
     OP_STREAM_END,
-    OP_WATCH_LOOP
+    OP_WATCH_LOOP,
+    OP_INTERVAL_WAIT  // slot_mask: interval const idx, operand: exit IP
 } OpCode;
 
 typedef struct BytecodeEmitter {

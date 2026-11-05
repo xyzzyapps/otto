@@ -28,7 +28,7 @@
 
 - **Flexible Argument Syntax:** Use either concise zero-preposition transitive style (`replace "old" "new"`, `split ","`, `sort age`) or explicit English prepositions (`replace "old" with "new"`, `split by ","`, `sort by age`).
 - **Natural Pronoun Registers:** Use `it` for current clause value, `that` for previous sentence output, and `them` for active list/token streams.
-- **Implicit Stdin Stream Processing:** Pipe any stream into `otto -c 'print each.'` and `otto` automatically handles the per-line stream loop.
+- **Implicit Stdin Stream Processing:** Pipe any stream into `otto -n -c 'print each.'` (`-n` / `--stdin`) and `otto` automatically handles the per-line stream loop.
 - **Strict Zero-Filler Rule:** No cryptic sigils (`$@`, `awk '{print $2}'`), and no decorative fluff (`the`, `a`, `to`, `of`, `set`, `all`). Every word performs concrete work.
 - **Ultra-Fast 4-Register VM:** Flat 64-bit bytecode interpreter with per-iteration arena recycle (`iter_arena`) for zero-allocation stream loops and guaranteed Tail Call Optimization ($O(1)$ stack recursion).
 - **Embedded SQLite Engine:** Query and insert directly into `.db` files with automatic schema generation and native `where` query pushdown.
@@ -138,7 +138,7 @@ zig cc -Isrc -Ivendor/sqlite3 $files vendor/sqlite3/libsqlite3.a -lwininet -o ot
 
 #### Option 1: Portable Pure C Test Runner (Cross-Platform, No PowerShell Needed)
 ```bash
-# Compile and run the unified C test suite (all 25 tests)
+# Compile and run the unified C test suite (all 28 tests)
 zig cc tests/test_runner.c -o test_runner.exe
 ./test_runner.exe
 ```
@@ -151,7 +151,7 @@ pwsh -File tests/run_master_tests.ps1
 # 7 Modern Capabilities Tests
 pwsh -File tests/test_new_features.ps1
 ```
-*Output: `TEST RESULTS: 25 / 25 PASSED (100% SUCCESS RATE)`*
+*Output: `TEST RESULTS: 28 / 28 PASSED (100% SUCCESS RATE)`*
 
 ### Run Interactive Shell (Starship Prompt + Ghost Autocomplete)
 ```powershell

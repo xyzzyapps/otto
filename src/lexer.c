@@ -32,7 +32,6 @@ void lexer_init(Lexer *lex, const char *source, size_t length, bool interactive)
     lex->line = 1;
     lex->col = 1;
     lex->interactive = interactive;
-    lex->passthrough_mode = false;
     lex->error_msg = NULL;
 }
 
@@ -87,7 +86,7 @@ static bool is_ordinal_suffix(const char *p, size_t rem, int *suffix_len) {
     return false;
 }
 
-static OttoTokenType classify_word(const char *word, size_t len, Token *tok) {
+static OttoTokenType classify_word(const char *word, size_t len) {
     // 1. Hooks
     if (len == 6 && strncasecmp(word, "before", 6) == 0) return TOK_HOOK_BEFORE;
     if (len == 5 && strncasecmp(word, "every", 5) == 0) return TOK_HOOK_EVERY;
@@ -136,7 +135,6 @@ static OttoTokenType classify_word(const char *word, size_t len, Token *tok) {
     if (len == 4 && strncasecmp(word, "jobs", 4) == 0) return TOK_VERB_JOBS;
     if (len == 6 && strncasecmp(word, "resume", 6) == 0) return TOK_VERB_RESUME;
     if (len == 6 && strncasecmp(word, "repeat", 6) == 0) return TOK_VERB_REPEAT;
-    if (len == 5 && strncasecmp(word, "reply", 5) == 0) return TOK_VERB_REPLY;
 
     // 3. Scanners
     if (len == 4 && strncasecmp(word, "line", 4) == 0) return TOK_SCAN_LINE;
@@ -153,10 +151,6 @@ static OttoTokenType classify_word(const char *word, size_t len, Token *tok) {
     if (len == 9 && strncasecmp(word, "processes", 9) == 0) return TOK_SCAN_PROCESSES;
     if (len == 3 && strncasecmp(word, "row", 3) == 0) return TOK_SCAN_ROW;
     if (len == 4 && strncasecmp(word, "rows", 4) == 0) return TOK_SCAN_ROWS;
-    if (len == 7 && strncasecmp(word, "request", 7) == 0) return TOK_SCAN_REQUEST;
-    if (len == 8 && strncasecmp(word, "requests", 8) == 0) return TOK_SCAN_REQUESTS;
-    if (len == 6 && strncasecmp(word, "change", 6) == 0) return TOK_SCAN_CHANGE;
-    if (len == 7 && strncasecmp(word, "changes", 7) == 0) return TOK_SCAN_CHANGES;
     if (len == 4 && strncasecmp(word, "json", 4) == 0) return TOK_SCAN_JSON;
     if (len == 3 && strncasecmp(word, "csv", 3) == 0) return TOK_SCAN_CSV;
     if (len == 4 && strncasecmp(word, "yaml", 4) == 0) return TOK_SCAN_YAML;
@@ -197,9 +191,7 @@ static OttoTokenType classify_word(const char *word, size_t len, Token *tok) {
     if (len == 5 && strncasecmp(word, "where", 5) == 0) return TOK_PREP_WHERE;
     if (len == 8 && strncasecmp(word, "matching", 8) == 0) return TOK_PREP_MATCHING;
     if (len == 2 && strncasecmp(word, "at", 2) == 0) return TOK_PREP_AT;
-    if (len == 6 && strncasecmp(word, "errors", 6) == 0) return TOK_PREP_ERRORS;
     if (len == 7 && strncasecmp(word, "discard", 7) == 0) return TOK_PREP_DISCARD;
-    if (len == 6 && strncasecmp(word, "target", 6) == 0) return TOK_PREP_TARGET;
     if (len == 9 && strncasecmp(word, "replacing", 9) == 0) return TOK_PREP_REPLACING;
 
     // 7. Conjunction words
@@ -303,8 +295,9 @@ Token lexer_next(Lexer *lex) {
             tok.type = TOK_EQ;
             tok.lexeme = (Slice){start, 2};
         } else {
-            tok.type = TOK_ASSIGN;
+            tok.type = TOK_ERROR;
             tok.lexeme = (Slice){start, 1};
+            lex->error_msg = "Unexpected '=' operator (use '==' for equality or 'into' for assignment)";
         }
         return tok;
     }
@@ -393,7 +386,6 @@ Token lexer_next(Lexer *lex) {
         // Check unit suffix: ms, s, m, h, d, b, kb, mb, gb
         char u = tolower((unsigned char)peek_char(lex));
         if (isalpha((unsigned char)u)) {
-            const char *unit_start = lex->source + lex->cursor;
             while (isalpha((unsigned char)peek_char(lex))) next_char(lex);
             tok.type = TOK_UNIT_LIT;
             tok.lexeme = (Slice){start, (size_t)(lex->source + lex->cursor - start)};
@@ -473,7 +465,7 @@ Token lexer_next(Lexer *lex) {
             return tok;
         }
 
-        tok.type = classify_word(start, wlen, &tok);
+        tok.type = classify_word(start, wlen);
         tok.lexeme = (Slice){start, wlen};
         if (tok.type == TOK_BOOL) {
             tok.lit.i64 = (wlen == 4 && strncasecmp(start, "true", 4) == 0) ? 1 : 0;
@@ -505,7 +497,7 @@ bool token_is_hook(OttoTokenType type) {
 }
 
 bool token_is_verb(OttoTokenType type) {
-    return type >= TOK_VERB_READ && type <= TOK_VERB_REPLY;
+    return type >= TOK_VERB_READ && type <= TOK_VERB_REPEAT;
 }
 
 bool token_is_scanner(OttoTokenType type) {

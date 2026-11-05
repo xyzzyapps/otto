@@ -21,8 +21,7 @@ typedef enum {
     AST_EXPR_BINARY,
     AST_EXPR_GENITIVE, // a's b
     AST_EXPR_MAP,      // { k: v, ... }
-    AST_EXPR_LIST,     // [ a, b, ... ]
-    AST_EXPR_THUNK     // [ clause, ... ]
+    AST_EXPR_LIST      // [ a, b, ... ]
 } ASTNodeType;
 
 // Preposition types
@@ -36,9 +35,7 @@ typedef enum {
     PREP_WHERE = (1 << 5),
     PREP_MATCHING = (1 << 6),
     PREP_AT = (1 << 7),
-    PREP_ERRORS = (1 << 8),
     PREP_DISCARD = (1 << 9),
-    PREP_TARGET = (1 << 10),
     PREP_REPLACING = (1 << 11)
 } PrepBit;
 
@@ -204,11 +201,6 @@ typedef struct ASTNode {
             struct ASTNode **items;
             size_t count;
         } list;
-
-        // AST_EXPR_THUNK
-        struct {
-            struct ASTNode *body; // AST_PIPE
-        } thunk;
     } as;
 } ASTNode;
 

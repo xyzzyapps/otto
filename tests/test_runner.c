@@ -742,6 +742,215 @@ static bool test_job_control(char *err, size_t err_sz) {
     return ok;
 }
 
+// Test 26: Audited Core Expressions, Lists, Drop/Join, Predicate Where & Sort Adverbs
+static bool test_audited_core_collections(char *err, size_t err_sz) {
+    // 26.1 Literal 0 + assignment, `add` with var & `that`, unary minus
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s -c \"0 into score. 10 into x. add 150 score. add 25 that. print that + -x.\"", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    trim_str(out1);
+    if (strcmp(out1, "165") != 0) {
+        snprintf(err, err_sz, "Expected '165', got '%s'", out1);
+        free(out1);
+        return false;
+    }
+    free(out1);
+
+    // 26.2 List literals, `drop`, `join`, general `where` comparisons
+    write_file("test_col.otto",
+        "[{name: \"a\", score: 15}, {name: \"b\", score: 50}, {name: \"c\", score: 80}], "
+        "drop where each's score < 30, take where each's score < 70, print first's name.\n"
+        "[10, 20, 30, 40], drop first, join \"-\", print.\n");
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s test_col.otto", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+    remove_file("test_col.otto");
+    if (strstr(out2, "b") == NULL || strstr(out2, "20-30-40") == NULL) {
+        snprintf(err, err_sz, "List/where/drop/join failed: got '%s'", out2);
+        free(out2);
+        return false;
+    }
+    free(out2);
+
+    // 26.3 Sort adverbs: `casefold uniquely` vs `numerically`
+    write_file("test_sort.otto",
+        "[\"banana\", \"Apple\", \"banana\", \"cherry\"], sort casefold uniquely, join \",\", print.\n"
+        "[\"100\", \"20\", \"3\"], sort numerically, join \",\", print.\n");
+    char cmd3[512];
+    snprintf(cmd3, sizeof(cmd3), "%s test_sort.otto", g_bin);
+    char *out3 = run_cmd(cmd3, NULL);
+    remove_file("test_sort.otto");
+    bool ok = (strstr(out3, "Apple,banana,cherry") != NULL && strstr(out3, "3,20,100") != NULL);
+    if (!ok) snprintf(err, err_sz, "Sort adverbs failed: got '%s'", out3);
+    free(out3);
+    return ok;
+}
+
+// Test 27: Generalized Unpack, CSV Scanner, Extractors & Universal `into`
+static bool test_unpack_csv_extractors(char *err, size_t err_sz) {
+    // 27.1 Arbitrary variable names in `unpack`
+    uint8_t dims[4] = { 0x40, 0x01, 0xE0, 0x01 }; // 320 x 480
+    write_binary_file("dims.bin", dims, sizeof(dims));
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s -c \"read \\\"dims.bin\\\", unpack \\\"u16 u16\\\" into width height. print width * height.\"", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    remove_file("dims.bin");
+    trim_str(out1);
+    if (strcmp(out1, "153600") != 0) {
+        snprintf(err, err_sz, "Generalized unpack failed: expected 153600, got '%s'", out1);
+        free(out1);
+        return false;
+    }
+    free(out1);
+
+    // 27.2 CSV scanner + numeric sort
+    write_file("team.csv", "user,score\nada,92\ngrace,98\nlinus,89\n");
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s -c \"read \\\"team.csv\\\" csv, sort score descending, print first's user.\"", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+    remove_file("team.csv");
+    trim_str(out2);
+    if (strcmp(out2, "grace") != 0) {
+        snprintf(err, err_sz, "CSV scanner failed: expected 'grace', got '%s'", out2);
+        free(out2);
+        return false;
+    }
+    free(out2);
+
+    // 27.3 URL / Email extractors & universal `into <var>`
+    write_file("test_ext.otto",
+        "\"contact admin@otto.sh or visit https://otto.sh/docs\", take urls into u. print first of u or print u.\n"
+        "\"order 42 shipped\", take 2nd number into ord_id. print ord_id.\n");
+    write_file("test_ext.otto",
+        "\"contact admin@otto.sh or visit https://otto.sh/docs\", take urls, print first.\n"
+        "\"contact admin@otto.sh or visit https://otto.sh/docs\", take emails, print first.\n"
+        "\"order 42 shipped\", take 2nd number into ord_id. print ord_id.\n");
+    char cmd3[512];
+    snprintf(cmd3, sizeof(cmd3), "%s test_ext.otto", g_bin);
+    char *out3 = run_cmd(cmd3, NULL);
+    remove_file("test_ext.otto");
+    bool ok = (strstr(out3, "https://otto.sh/docs") != NULL &&
+               strstr(out3, "admin@otto.sh") != NULL &&
+               strstr(out3, "42") != NULL);
+    if (!ok) snprintf(err, err_sz, "Extractors/into failed: got '%s'", out3);
+    free(out3);
+    return ok;
+}
+
+// Test 28: File Ops (`copy`, `move`, `remove` + `undo`), Recursive Glob, FFI, Hooks & History
+static bool test_fileops_ffi_hooks_history(char *err, size_t err_sz) {
+    // 28.1 File copy, move, remove + transactional undo
+    write_file("f_orig.txt", "alpha_payload");
+    remove_file("f_copy.txt");
+    remove_file("f_moved.txt");
+
+    char cmd1[512];
+    snprintf(cmd1, sizeof(cmd1), "%s -c \"copy \\\"f_orig.txt\\\" into \\\"f_copy.txt\\\". move \\\"f_copy.txt\\\" into \\\"f_moved.txt\\\".\"", g_bin);
+    char *out1 = run_cmd(cmd1, NULL);
+    free(out1);
+
+    char *moved_c = read_file("f_moved.txt");
+    if (!moved_c || strcmp(moved_c, "alpha_payload") != 0 || file_exists("f_copy.txt")) {
+        if (moved_c) free(moved_c);
+        remove_file("f_orig.txt");
+        remove_file("f_copy.txt");
+        remove_file("f_moved.txt");
+        snprintf(err, err_sz, "copy/move failed");
+        return false;
+    }
+    free(moved_c);
+    remove_file("f_moved.txt");
+
+    snprintf(cmd1, sizeof(cmd1), "%s -c \"remove \\\"f_orig.txt\\\".\"", g_bin);
+    out1 = run_cmd(cmd1, NULL);
+    free(out1);
+    if (file_exists("f_orig.txt")) {
+        remove_file("f_orig.txt");
+        snprintf(err, err_sz, "remove failed to delete f_orig.txt");
+        return false;
+    }
+
+    snprintf(cmd1, sizeof(cmd1), "%s -c \"undo last.\"", g_bin);
+    out1 = run_cmd(cmd1, NULL);
+    free(out1);
+    char *restored = read_file("f_orig.txt");
+    remove_file("f_orig.txt");
+    if (!restored || strcmp(restored, "alpha_payload") != 0) {
+        if (restored) free(restored);
+        snprintf(err, err_sz, "undo after remove failed");
+        return false;
+    }
+    free(restored);
+
+    // 28.2 Recursive globbing
+    mkdir_p("test_rec_dir");
+    mkdir_p("test_rec_dir/nested");
+    write_file("test_rec_dir/nested/deep.txt", "ok");
+    char cmd2[512];
+    snprintf(cmd2, sizeof(cmd2), "%s -c \"every recursively file \\\"test_rec_dir/*.txt\\\": print.\"", g_bin);
+    char *out2 = run_cmd(cmd2, NULL);
+    remove_file("test_rec_dir/nested/deep.txt");
+#ifdef _WIN32
+    _rmdir("test_rec_dir/nested");
+    _rmdir("test_rec_dir");
+#else
+    rmdir("test_rec_dir/nested");
+    rmdir("test_rec_dir");
+#endif
+    if (strstr(out2, "deep.txt") == NULL) {
+        snprintf(err, err_sz, "recursively glob failed: got '%s'", out2);
+        free(out2);
+        return false;
+    }
+    free(out2);
+
+    // 28.3 Native C ABI FFI + Hooks (`on failure:`, `on exit:`, `every 50ms:`) + History (`previous's last`, `repeat`)
+#ifdef _WIN32
+    const char *libc_name = "msvcrt.dll";
+#elif defined(__APPLE__)
+    const char *libc_name = "libSystem.B.dylib";
+#else
+    const char *libc_name = "libc.so.6";
+#endif
+    char script_buf[1024];
+    snprintf(script_buf, sizeof(script_buf),
+        "extern \"%s\" abs(i32) into c_abs.\n"
+        "on failure: print \"caught_err\".\n"
+        "on exit: print \"exit_hook_ok\".\n"
+        "c_abs -42, print.\n"
+        "read \"nonexistent_file_xyz_999.txt\".\n"
+        "every 20ms: print \"timer_tick\".\n"
+        "print \"hello_foo\".\n"
+        "print previous's last.\n"
+        "repeat previous replacing \"foo\" with \"bar\".\n",
+        libc_name);
+    write_file("test_hooks.otto", script_buf);
+#ifdef _WIN32
+    _putenv_s("OTTO_WATCH_ONCE", "1");
+#else
+    setenv("OTTO_WATCH_ONCE", "1", 1);
+#endif
+    char cmd3[512];
+    snprintf(cmd3, sizeof(cmd3), "%s test_hooks.otto", g_bin);
+    char *out3 = run_cmd(cmd3, NULL);
+    remove_file("test_hooks.otto");
+#ifdef _WIN32
+    _putenv_s("OTTO_WATCH_ONCE", "");
+#else
+    unsetenv("OTTO_WATCH_ONCE");
+#endif
+
+    bool ok = (strstr(out3, "42") != NULL &&
+               strstr(out3, "caught_err") != NULL &&
+               strstr(out3, "timer_tick") != NULL &&
+               strstr(out3, "hello_foo") != NULL &&
+               strstr(out3, "hello_bar") != NULL &&
+               strstr(out3, "exit_hook_ok") != NULL);
+    if (!ok) snprintf(err, err_sz, "FFI/hooks/history failed: got '%s'", out3);
+    free(out3);
+    return ok;
+}
+
 // ---------------------------------------------------------
 // Main Entry Point
 // ---------------------------------------------------------
@@ -771,7 +980,7 @@ int main(int argc, char **argv) {
     }
 
     printf("\033[1;36m==========================================================\033[0m\n");
-    printf("\033[1;36mOTTO UNIFIED PORTABLE C TEST RUNNER (ALL 25 TESTS)\033[0m\n");
+    printf("\033[1;36mOTTO UNIFIED PORTABLE C TEST RUNNER (ALL 28 TESTS)\033[0m\n");
     printf("\033[1;36mTarget Binary: %s\033[0m\n", g_bin);
     printf("\033[1;36m==========================================================\033[0m\n");
 
@@ -805,6 +1014,11 @@ int main(int argc, char **argv) {
     run_test("Pronoun registers 'that' and 'them'", test_pronoun_registers);
     run_test("Implicit Stdin Pipeline Loop", test_implicit_stdin_loop);
     run_test("Job Control (background, jobs, kill)", test_job_control);
+
+    // Comprehensive Post-Audit Verification Tests (26-28)
+    run_test("Audited Core Expressions, Lists, Drop/Join, Where & Sort Adverbs", test_audited_core_collections);
+    run_test("Generalized Unpack, CSV Scanner, Extractors & Universal 'into'", test_unpack_csv_extractors);
+    run_test("File Ops (copy/move/remove + undo), Recursive Glob, FFI, Hooks & History", test_fileops_ffi_hooks_history);
 
     printf("\n\033[1;36m==========================================================\033[0m\n");
     if (g_passed == g_total) {

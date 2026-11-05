@@ -16,18 +16,6 @@ bool slice_eq_str(Slice a, const char *b) {
     return memcmp(a.ptr, b, a.len) == 0;
 }
 
-bool slice_case_eq_str(Slice a, const char *b) {
-    if (!b) return a.len == 0;
-    size_t blen = strlen(b);
-    if (a.len != blen) return false;
-    for (size_t i = 0; i < a.len; i++) {
-        if (tolower((unsigned char)a.ptr[i]) != tolower((unsigned char)b[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
 Slice slice_trim(Slice s) {
     while (s.len > 0 && isspace((unsigned char)*s.ptr)) {
         s.ptr++;
@@ -37,31 +25,6 @@ Slice slice_trim(Slice s) {
         s.len--;
     }
     return s;
-}
-
-bool slice_starts_with(Slice s, const char *prefix) {
-    if (!prefix) return true;
-    size_t plen = strlen(prefix);
-    if (s.len < plen) return false;
-    return memcmp(s.ptr, prefix, plen) == 0;
-}
-
-bool slice_ends_with(Slice s, const char *suffix) {
-    if (!suffix) return true;
-    size_t slen = strlen(suffix);
-    if (s.len < slen) return false;
-    return memcmp(s.ptr + s.len - slen, suffix, slen) == 0;
-}
-
-bool slice_contains(Slice haystack, Slice needle) {
-    if (needle.len == 0) return true;
-    if (haystack.len < needle.len) return false;
-    for (size_t i = 0; i <= haystack.len - needle.len; i++) {
-        if (memcmp(haystack.ptr + i, needle.ptr, needle.len) == 0) {
-            return true;
-        }
-    }
-    return false;
 }
 
 int64_t slice_to_i64(Slice s, bool *ok) {
@@ -176,11 +139,12 @@ static uint32_t hash_slice(Slice s) {
 }
 
 Value val_map_create(Arena *arena, size_t capacity) {
-    if (capacity < 8) capacity = 8;
+    size_t cap = 8;
+    while (cap < capacity) cap *= 2;
     ValueMap *map = (ValueMap *)arena_alloc(arena, sizeof(ValueMap));
-    map->entries = (MapEntry *)arena_alloc_zero(arena, capacity * sizeof(MapEntry));
+    map->entries = (MapEntry *)arena_alloc_zero(arena, cap * sizeof(MapEntry));
     map->count = 0;
-    map->capacity = capacity;
+    map->capacity = cap;
     Value v;
     v.type = VAL_MAP;
     v.flags = 0;
@@ -288,31 +252,59 @@ bool val_equal(Value a, Value b) {
     }
 }
 
-int val_compare(Value a, Value b, bool numeric) {
-    if (numeric || ((a.type == VAL_INT || a.type == VAL_FLOAT) && (b.type == VAL_INT || b.type == VAL_FLOAT))) {
-        double da = 0.0, db = 0.0;
-        if (a.type == VAL_INT) da = (double)a.as.i64;
-        else if (a.type == VAL_FLOAT) da = a.as.f64;
-        else if (a.type == VAL_SLICE) { bool ok; da = slice_to_f64(a.as.slice, &ok); }
-        
-        if (b.type == VAL_INT) db = (double)b.as.i64;
-        else if (b.type == VAL_FLOAT) db = b.as.f64;
-        else if (b.type == VAL_SLICE) { bool ok; db = slice_to_f64(b.as.slice, &ok); }
-        
-        if (da < db) return -1;
-        if (da > db) return 1;
-        return 0;
+static bool val_try_number(Value v, double *out) {
+    if (v.type == VAL_INT) { *out = (double)v.as.i64; return true; }
+    if (v.type == VAL_FLOAT) { *out = v.as.f64; return true; }
+    if (v.type == VAL_SLICE && v.as.slice.len > 0) {
+        Slice s = slice_trim(v.as.slice);
+        if (s.len == 0 || s.len >= 63) return false;
+        char buf[64];
+        memcpy(buf, s.ptr, s.len);
+        buf[s.len] = '\0';
+        char *end = NULL;
+        double d = strtod(buf, &end);
+        if (end && *end == '\0') {
+            *out = d;
+            return true;
+        }
     }
-    
+    return false;
+}
+
+int val_compare_ex(Value a, Value b, bool numeric, bool casefold) {
+    bool a_is_num_type = (a.type == VAL_INT || a.type == VAL_FLOAT);
+    bool b_is_num_type = (b.type == VAL_INT || b.type == VAL_FLOAT);
+
+    if (numeric || (a_is_num_type && b_is_num_type)) {
+        double da = 0.0, db = 0.0;
+        if (val_try_number(a, &da) && val_try_number(b, &db)) {
+            if (da < db) return -1;
+            if (da > db) return 1;
+            return 0;
+        }
+    }
+
     // String comparison
     Slice sa = (a.type == VAL_SLICE) ? a.as.slice : (Slice){"", 0};
     Slice sb = (b.type == VAL_SLICE) ? b.as.slice : (Slice){"", 0};
     size_t min_len = sa.len < sb.len ? sa.len : sb.len;
-    int cmp = memcmp(sa.ptr, sb.ptr, min_len);
-    if (cmp != 0) return cmp;
+    if (casefold) {
+        for (size_t i = 0; i < min_len; i++) {
+            int ca = tolower((unsigned char)sa.ptr[i]);
+            int cb = tolower((unsigned char)sb.ptr[i]);
+            if (ca != cb) return ca - cb;
+        }
+    } else {
+        int cmp = (min_len > 0) ? memcmp(sa.ptr, sb.ptr, min_len) : 0;
+        if (cmp != 0) return cmp;
+    }
     if (sa.len < sb.len) return -1;
     if (sa.len > sb.len) return 1;
     return 0;
+}
+
+int val_compare(Value a, Value b, bool numeric) {
+    return val_compare_ex(a, b, numeric, false);
 }
 
 char *val_to_string(Value v, Arena *arena) {
@@ -331,11 +323,56 @@ char *val_to_string(Value v, Arena *arena) {
         case VAL_LIST: {
             size_t len = val_list_len(v);
             if (len == 0) return arena_strdup(arena, "[]");
-            // Simple string format
-            return arena_strdup(arena, "[...]");
+            char lbuf[256];
+            size_t pos = 0;
+            lbuf[pos++] = '[';
+            for (size_t i = 0; i < len && pos + 8 < sizeof(lbuf); i++) {
+                if (i > 0) { lbuf[pos++] = ','; lbuf[pos++] = ' '; }
+                char *is = val_to_string(val_list_get(v, i), arena);
+                size_t ilen = strlen(is);
+                if (pos + ilen + 4 >= sizeof(lbuf)) {
+                    memcpy(lbuf + pos, "...", 3);
+                    pos += 3;
+                    break;
+                }
+                memcpy(lbuf + pos, is, ilen);
+                pos += ilen;
+            }
+            lbuf[pos++] = ']';
+            lbuf[pos] = '\0';
+            return arena_strdup(arena, lbuf);
         }
-        case VAL_MAP:
-            return arena_strdup(arena, "{...}");
+        case VAL_MAP: {
+            ValueMap *m = v.as.map;
+            if (!m || m->count == 0) return arena_strdup(arena, "{}");
+            char mbuf[256];
+            size_t pos = 0;
+            mbuf[pos++] = '{';
+            bool first = true;
+            for (size_t i = 0; i < m->capacity && pos + 8 < sizeof(mbuf); i++) {
+                if (m->entries[i].occupied) {
+                    if (!first) { mbuf[pos++] = ','; mbuf[pos++] = ' '; }
+                    first = false;
+                    size_t klen = m->entries[i].key.len;
+                    char *vs = val_to_string(m->entries[i].val, arena);
+                    size_t vlen = strlen(vs);
+                    if (pos + klen + 2 + vlen + 4 >= sizeof(mbuf)) {
+                        memcpy(mbuf + pos, "...", 3);
+                        pos += 3;
+                        break;
+                    }
+                    memcpy(mbuf + pos, m->entries[i].key.ptr, klen);
+                    pos += klen;
+                    mbuf[pos++] = ':';
+                    mbuf[pos++] = ' ';
+                    memcpy(mbuf + pos, vs, vlen);
+                    pos += vlen;
+                }
+            }
+            mbuf[pos++] = '}';
+            mbuf[pos] = '\0';
+            return arena_strdup(arena, mbuf);
+        }
         default:
             return arena_strdup(arena, "<value>");
     }
@@ -391,7 +428,7 @@ void val_println(Value v, FILE *out) {
 Value val_clone_to_arena(Value v, Arena *dst) {
     switch (v.type) {
         case VAL_SLICE: {
-            char *buf = arena_strndup(dst, v.as.slice.ptr, v.as.slice.len);
+            char *buf = arena_strndup(dst, v.as.slice.ptr ? v.as.slice.ptr : "", v.as.slice.len);
             return val_slice(buf, v.as.slice.len);
         }
         case VAL_LIST: {

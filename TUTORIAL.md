@@ -68,7 +68,7 @@ Every valid token in `otto` belongs to one of eight grammatical classes:
 | **Scanners** | Tokenizers for unstructured or structured streams | `line`, `lines`, `word`, `words`, `number`, `numbers`, `byte`, `bytes`, `file`, `files`, `process`, `processes`, `row`, `rows`, `json`, `yaml`, `host`, `hosts` |
 | **Ordinals** | Positional indexers & field selectors | `first` (`1st`), `second` (`2nd`), `third` (`3rd`), `fourth` (`4th`), `last`, `nth`, `top`, `each` |
 | **Adverbs** | Modifiers specifying verb execution semantics | `recursively`, `numerically`, `descending`, `uniquely`, `inplace`, `concurrently`, `casefold`, `simulate`, `parallel`, `background` |
-| **Prepositions** | Target slots for inputs, outputs, and parameters | `into`, `onto`, `from`, `with`, `by`, `where`, `matching`, `at`, `discard`, `replacing`, `target` |
+| **Prepositions** | Target slots for inputs, outputs, and parameters | `into`, `onto`, `from`, `with`, `by`, `where`, `matching`, `at`, `discard`, `replacing` |
 | **Conjunctions** | Stream routing and pipeline logic | `,` (pipe), `and` (parallel tee), `or` (fallback/error recovery) |
 | **Registers** | Fast hardware and execution state tokens | `acc` (accumulator), `cur` (`item`), `fld` (fields), `error`, `previous` |
 
@@ -117,10 +117,10 @@ Sentences in `otto` can chain results effortlessly using `that` and `them`:
 # Output: cherry
 ```
 
-### Implicit Stdin Stream Processing
-When piped into from another program or shell pipeline, `otto -c` automatically establishes an implicit stream loop over lines without requiring explicit `every line: ...`:
+### Implicit Stdin Stream Processing (`-n` / `--stdin`)
+When piped into from another program or shell pipeline, passing `-n` (or `--stdin`) establishes an implicit stream loop over lines without requiring explicit `every line: ...`:
 ```bash
-cat access.log | otto -c 'print each.'
+cat access.log | otto -n -c 'print each.'
 ```
 
 ---

@@ -17,7 +17,7 @@ function Run-Test($name, $scriptBlock) {
     }
 }
 
-$bin = if (Test-Path ".\otto.exe") { ".\otto.exe" } else { ".\shx.exe" }
+$bin = ".\otto.exe"
 
 # 1. Native HTTP REST Streams (fetch GET & onto POST)
 Run-Test "Native HTTP REST Streams (fetch & onto POST)" {

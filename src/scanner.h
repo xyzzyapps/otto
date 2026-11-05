@@ -14,7 +14,4 @@ Value scanner_extract_all(OttoTokenType scanner, Value input, Arena *arena);
 // Glob matching helper
 bool scanner_glob_match(const char *pattern, const char *string);
 
-// Process listing helper
-Value scanner_list_processes(Arena *arena);
-
 #endif // OTTO_SCANNER_H

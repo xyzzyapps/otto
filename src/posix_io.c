@@ -114,28 +114,68 @@ bool posix_run_command(const char *cmd_line, Value stdin_val, Value *out_acc, Va
     }
     return true;
 #else
-    FILE *fp = popen(cmd_line, "r");
-    if (!fp) return false;
-    char chunk[1024];
+    int in_pipe[2];
+    int out_pipe[2];
+    if (pipe(in_pipe) != 0) return false;
+    if (pipe(out_pipe) != 0) {
+        close(in_pipe[0]); close(in_pipe[1]);
+        return false;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(in_pipe[0]); close(in_pipe[1]);
+        close(out_pipe[0]); close(out_pipe[1]);
+        if (out_err) *out_err = val_cstr("Failed to fork process");
+        return false;
+    }
+
+    if (pid == 0) {
+        dup2(in_pipe[0], STDIN_FILENO);
+        dup2(out_pipe[1], STDOUT_FILENO);
+        dup2(out_pipe[1], STDERR_FILENO);
+        close(in_pipe[0]); close(in_pipe[1]);
+        close(out_pipe[0]); close(out_pipe[1]);
+        execl("/bin/sh", "sh", "-c", cmd_line, (char *)NULL);
+        _exit(127);
+    }
+
+    close(in_pipe[0]);
+    close(out_pipe[1]);
+
+    if (stdin_val.type == VAL_SLICE && stdin_val.as.slice.len > 0) {
+        ssize_t ignored = write(in_pipe[1], stdin_val.as.slice.ptr, stdin_val.as.slice.len);
+        (void)ignored;
+    }
+    close(in_pipe[1]);
+
     size_t cap = 4096;
     size_t len = 0;
     char *out_buf = (char *)malloc(cap);
-    while (fgets(chunk, sizeof(chunk), fp)) {
-        size_t clen = strlen(chunk);
-        while (len + clen + 1 >= cap) {
+    char chunk[1024];
+    ssize_t nread;
+    while ((nread = read(out_pipe[0], chunk, sizeof(chunk))) > 0) {
+        while (len + (size_t)nread + 1 >= cap) {
             cap *= 2;
             out_buf = (char *)realloc(out_buf, cap);
         }
-        memcpy(out_buf + len, chunk, clen);
-        len += clen;
+        memcpy(out_buf + len, chunk, (size_t)nread);
+        len += (size_t)nread;
     }
-    int status = pclose(fp);
+    close(out_pipe[0]);
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+
     out_buf[len] = '\0';
     while (len > 0 && (out_buf[len - 1] == '\r' || out_buf[len - 1] == '\n')) out_buf[--len] = '\0';
     char *res = arena_strndup(arena, out_buf, len);
     free(out_buf);
     if (out_acc) *out_acc = val_slice(res, len);
-    return status == 0;
+
+    bool ok = (WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    if (!ok && out_err) *out_err = val_cstr("Process exited with non-zero status");
+    return ok;
 #endif
 }
 

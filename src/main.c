@@ -36,7 +36,6 @@ static void run_source(VM *vm, const char *source, size_t len, bool is_one_liner
         vm->constants = be.constants;
         vm->const_count = be.const_count;
 
-        extern void vm_run(VM *vm);
         vm_run(vm);
     }
 
@@ -58,7 +57,6 @@ int main(int argc, char **argv) {
         VM vm;
         vm_init(&vm);
         bundle_load_into_vm(&vm, embedded_bc, embedded_len);
-        extern void vm_run(VM *vm);
         vm_run(&vm);
         free(embedded_bc);
         vm_destroy(&vm);
@@ -125,7 +123,6 @@ int main(int argc, char **argv) {
             uint8_t *bc_buf = (uint8_t *)malloc(bsize);
             fread(bc_buf, 1, bsize, stdin);
             bundle_load_into_vm(&vm, bc_buf, bsize);
-            extern void vm_run(VM *vm);
             vm_run(&vm);
             free(bc_buf);
         }

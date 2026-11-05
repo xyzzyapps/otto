@@ -1,4 +1,5 @@
 #include "http_client.h"
+#include "posix_io.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -163,7 +164,17 @@ Value http_post(const char *url, Value body, Arena *arena, Value *out_err) {
     if (out_err) *out_err = val_nil();
     return val_slice(res, len);
 #else
+    char *body_str = val_to_string(body, arena);
+    Value stdin_payload = val_slice(body_str, strlen(body_str));
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "curl -s -L -X POST -H \"Content-Type: application/json\" --data-binary @- \"%s\"", url);
+    Value resp = val_nil();
+    Value err = val_nil();
+    if (!posix_run_command(cmd, stdin_payload, &resp, &err, arena)) {
+        if (out_err) *out_err = err;
+        return val_nil();
+    }
     if (out_err) *out_err = val_nil();
-    return val_cstr("POST OK");
+    return resp;
 #endif
 }

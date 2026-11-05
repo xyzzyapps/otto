@@ -1,4 +1,7 @@
 #include "shell_env.h"
+#include "vm.h"
+#include "parser.h"
+#include "bc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,7 +29,7 @@ static DirEntry g_dirs[64];
 static size_t g_dir_count = 0;
 static int g_visit_clock = 0;
 
-void shell_cd(const char *path, Arena *arena) {
+void shell_cd(const char *path) {
     char cur[512];
     if (getcwd(cur, sizeof(cur))) {
         g_visit_clock++;
@@ -114,7 +117,7 @@ Value shell_jump(const char *keyword, Arena *arena) {
 
     if (found) {
         char *target = arena_strdup(arena, g_dirs[best_idx].path);
-        shell_cd(target, arena);
+        shell_cd(target);
         return val_slice(target, strlen(target));
     }
 
@@ -125,16 +128,17 @@ Value shell_jump(const char *keyword, Arena *arena) {
         char full[512] = "";
         _fullpath(full, keyword, sizeof(full));
         char *target = arena_strdup(arena, full[0] ? full : keyword);
-        shell_cd(target, arena);
+        shell_cd(target);
         return val_slice(target, strlen(target));
     }
 #else
     struct stat st;
     if (stat(keyword, &st) == 0 && S_ISDIR(st.st_mode)) {
         char full[512] = "";
-        realpath(keyword, full);
+        char *rp = realpath(keyword, full);
+        (void)rp;
         char *target = arena_strdup(arena, full[0] ? full : keyword);
-        shell_cd(target, arena);
+        shell_cd(target);
         return val_slice(target, strlen(target));
     }
 #endif
@@ -229,21 +233,47 @@ bool shell_kill_job(int job_or_pid) {
     return false;
 }
 
-void shell_load_rc(void) {
+void shell_load_rc(VM *vm) {
+    if (!vm) return;
     const char *home = getenv("USERPROFILE");
     if (!home) home = getenv("HOME");
     if (!home) return;
     char rc_path[512];
     snprintf(rc_path, sizeof(rc_path), "%s/.ottorc", home);
-    FILE *fp = fopen(rc_path, "r");
-    if (!fp) {
-        snprintf(rc_path, sizeof(rc_path), "%s/.shxrc", home);
-        fp = fopen(rc_path, "r");
-    }
-    if (fp) {
-        // Will be executed if present
+    FILE *fp = fopen(rc_path, "rb");
+    if (!fp) return;
+
+    fseek(fp, 0, SEEK_END);
+    long fsize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (fsize <= 0) {
         fclose(fp);
+        return;
     }
+
+    char *src = (char *)malloc((size_t)fsize + 1);
+    size_t nread = fread(src, 1, (size_t)fsize, fp);
+    src[nread] = '\0';
+    fclose(fp);
+
+    Arena rc_arena;
+    arena_init(&rc_arena, 64 * 1024);
+    Parser parser;
+    parser_init(&parser, src, nread, false, &rc_arena);
+    ASTNode *prog = parser_parse_program(&parser);
+    if (!parser.has_error && prog) {
+        BytecodeEmitter be;
+        bc_init(&be, &vm->perm_arena);
+        if (bc_compile_program(&be, prog)) {
+            vm->code = be.code;
+            vm->code_len = be.count;
+            vm->constants = be.constants;
+            vm->const_count = be.const_count;
+            vm_run(vm);
+        }
+    }
+    arena_free(&rc_arena);
+    free(src);
 }
 
 Value shell_repeat_history(Value prev_cmd, const char *with_prefix, const char *replace_old, const char *replace_new, Arena *arena) {

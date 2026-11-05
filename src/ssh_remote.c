@@ -4,23 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-bool ssh_execute_remote(const char *host, const uint8_t *bytecode, size_t bc_len, Value *out_acc, Arena *arena) {
-    if (!host || !host[0]) return false;
+bool ssh_execute_remote(const char *host, const char *remote_cmd, Value stdin_val, Value *out_acc, Value *out_err, Arena *arena) {
+    if (!host || !host[0] || !remote_cmd || !remote_cmd[0]) return false;
 
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "ssh -o BatchMode=yes %s \"otto --rpc\"", host);
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "ssh -o BatchMode=yes %s \"%s\"", host, remote_cmd);
 
-    Value stdin_payload = val_slice((const char *)bytecode, bc_len);
-    Value remote_acc = val_nil();
-    Value remote_err = val_nil();
-
-    bool ok = posix_run_command(cmd, stdin_payload, &remote_acc, &remote_err, arena);
-    if (ok) {
-        if (out_acc) *out_acc = remote_acc;
-        return true;
-    }
-
-    // Fallback: if remote failed or SSH not configured, return empty count or 0
-    if (out_acc) *out_acc = val_int(0);
-    return true;
+    return posix_run_command(cmd, stdin_val, out_acc, out_err, arena);
 }

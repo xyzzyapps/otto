@@ -72,103 +72,96 @@ static void file_lines_close(StreamDesc *s) {
     }
 }
 
-// Directory Files Stream
+// Directory Files Stream (supports both flat and ADV_RECURSIVELY)
 typedef struct FileGlobStream {
-#ifdef _WIN32
-    HANDLE hFind;
-    WIN32_FIND_DATAA findData;
-    bool started;
-    char dir_prefix[260];
-    char pattern[260];
-#else
-    DIR *dir;
-    char dir_prefix[260];
-    char pattern[260];
-#endif
-    uint16_t adverbs;
+    char **paths;
+    size_t count;
+    size_t cap;
+    size_t index;
 } FileGlobStream;
+
+static void glob_add_path(FileGlobStream *fg, const char *path, Arena *arena) {
+    if (fg->count >= fg->cap) {
+        size_t new_cap = fg->cap ? fg->cap * 2 : 64;
+        char **new_paths = (char **)arena_alloc(arena, new_cap * sizeof(char *));
+        if (fg->paths && fg->count > 0) {
+            memcpy(new_paths, fg->paths, fg->count * sizeof(char *));
+        }
+        fg->paths = new_paths;
+        fg->cap = new_cap;
+    }
+    fg->paths[fg->count++] = arena_strdup(arena, path);
+}
+
+static void glob_walk_dir(const char *dir_prefix, const char *pattern, uint16_t adverbs, FileGlobStream *fg, Arena *arena, int depth) {
+    if (depth > 16) return;
+#ifdef _WIN32
+    char search_path[512];
+    if (dir_prefix && dir_prefix[0]) {
+        snprintf(search_path, sizeof(search_path), "%s/*", dir_prefix);
+    } else {
+        snprintf(search_path, sizeof(search_path), "*");
+    }
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(search_path, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        if ((adverbs & ADV_IGNORING_GIT) && strcmp(fd.cFileName, ".git") == 0) continue;
+        bool is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        char full_path[512];
+        if (dir_prefix && dir_prefix[0]) {
+            snprintf(full_path, sizeof(full_path), "%s/%s", dir_prefix, fd.cFileName);
+        } else {
+            snprintf(full_path, sizeof(full_path), "%s", fd.cFileName);
+        }
+        if (scanner_glob_match(pattern, fd.cFileName)) {
+            glob_add_path(fg, full_path, arena);
+        }
+        if (is_dir && (adverbs & ADV_RECURSIVELY)) {
+            glob_walk_dir(full_path, pattern, adverbs, fg, arena, depth + 1);
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    DIR *dir = opendir((dir_prefix && dir_prefix[0]) ? dir_prefix : ".");
+    if (!dir) return;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        if ((adverbs & ADV_IGNORING_GIT) && strcmp(entry->d_name, ".git") == 0) continue;
+        bool is_dir = (entry->d_type == DT_DIR);
+        char full_path[512];
+        if (dir_prefix && dir_prefix[0]) {
+            snprintf(full_path, sizeof(full_path), "%s/%s", dir_prefix, entry->d_name);
+        } else {
+            snprintf(full_path, sizeof(full_path), "%s", entry->d_name);
+        }
+        if (scanner_glob_match(pattern, entry->d_name)) {
+            glob_add_path(fg, full_path, arena);
+        }
+        if (is_dir && (adverbs & ADV_RECURSIVELY)) {
+            glob_walk_dir(full_path, pattern, adverbs, fg, arena, depth + 1);
+        }
+    }
+    closedir(dir);
+#endif
+}
 
 static bool file_glob_next(StreamDesc *s, Value *out, Arena *arena) {
     FileGlobStream *fg = (FileGlobStream *)s->handle;
-    if (!fg) return false;
-
-#ifdef _WIN32
-    if (!fg->started) {
-        fg->started = true;
-        char search_path[512];
-        if (fg->dir_prefix[0]) {
-            snprintf(search_path, sizeof(search_path), "%s/*", fg->dir_prefix);
-        } else {
-            snprintf(search_path, sizeof(search_path), "*");
-        }
-        fg->hFind = FindFirstFileA(search_path, &fg->findData);
-        if (fg->hFind == INVALID_HANDLE_VALUE) {
-            s->eof = true;
-            return false;
-        }
-    } else {
-        if (!FindNextFileA(fg->hFind, &fg->findData)) {
-            s->eof = true;
-            return false;
-        }
+    if (!fg || fg->index >= fg->count) {
+        s->eof = true;
+        return false;
     }
-
-    do {
-        if (strcmp(fg->findData.cFileName, ".") != 0 && strcmp(fg->findData.cFileName, "..") != 0) {
-            if ((fg->adverbs & ADV_IGNORING_GIT) && strcmp(fg->findData.cFileName, ".git") == 0) {
-                continue;
-            }
-            if (scanner_glob_match(fg->pattern, fg->findData.cFileName)) {
-                char full_path[512];
-                if (fg->dir_prefix[0]) {
-                    snprintf(full_path, sizeof(full_path), "%s/%s", fg->dir_prefix, fg->findData.cFileName);
-                } else {
-                    snprintf(full_path, sizeof(full_path), "%s", fg->findData.cFileName);
-                }
-                char *res = arena_strdup(arena, full_path);
-                *out = val_slice(res, strlen(res));
-                return true;
-            }
-        }
-    } while (FindNextFileA(fg->hFind, &fg->findData));
-#else
-    struct dirent *entry;
-    while ((entry = readdir(fg->dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
-        if ((fg->adverbs & ADV_IGNORING_GIT) && strcmp(entry->d_name, ".git") == 0) continue;
-        if (scanner_glob_match(fg->pattern, entry->d_name)) {
-            char full_path[512];
-            if (fg->dir_prefix[0]) {
-                snprintf(full_path, sizeof(full_path), "%s/%s", fg->dir_prefix, entry->d_name);
-            } else {
-                snprintf(full_path, sizeof(full_path), "%s", entry->d_name);
-            }
-            char *res = arena_strdup(arena, full_path);
-            *out = val_slice(res, strlen(res));
-            return true;
-        }
-    }
-#endif
-
-    s->eof = true;
-    return false;
+    const char *p = fg->paths[fg->index++];
+    char *res = arena_strdup(arena, p);
+    *out = val_slice(res, strlen(res));
+    return true;
 }
 
 static void file_glob_close(StreamDesc *s) {
-    FileGlobStream *fg = (FileGlobStream *)s->handle;
-    if (fg) {
-#ifdef _WIN32
-        if (fg->hFind && fg->hFind != INVALID_HANDLE_VALUE) {
-            FindClose(fg->hFind);
-            fg->hFind = INVALID_HANDLE_VALUE;
-        }
-#else
-        if (fg->dir) {
-            closedir(fg->dir);
-            fg->dir = NULL;
-        }
-#endif
-    }
+    (void)s;
 }
 
 // Process Stream
@@ -179,6 +172,7 @@ typedef struct ProcessStream {
     bool started;
 #else
     FILE *pipe;
+    bool started;
 #endif
 } ProcessStream;
 
@@ -213,6 +207,30 @@ static bool process_stream_next(StreamDesc *s, Value *out, Arena *arena) {
     *out = pmap;
     return true;
 #else
+    if (!ps->started) {
+        ps->started = true;
+        ps->pipe = popen("ps -eo pid=,comm=", "r");
+        if (!ps->pipe) {
+            s->eof = true;
+            return false;
+        }
+    }
+    char line[512];
+    while (fgets(line, sizeof(line), ps->pipe)) {
+        char *p = line;
+        while (*p && isspace((unsigned char)*p)) p++;
+        if (!isdigit((unsigned char)*p)) continue;
+        int64_t pid = strtoll(p, &p, 10);
+        while (*p && isspace((unsigned char)*p)) p++;
+        size_t nlen = strlen(p);
+        while (nlen > 0 && (p[nlen - 1] == '\r' || p[nlen - 1] == '\n')) p[--nlen] = '\0';
+        Value pmap = val_map_create(arena, 4);
+        val_map_set_str(&pmap, "pid", val_int(pid), arena);
+        char *name = arena_strndup(arena, p, nlen);
+        val_map_set_str(&pmap, "name", val_slice(name, nlen), arena);
+        *out = pmap;
+        return true;
+    }
     s->eof = true;
     return false;
 #endif
@@ -225,6 +243,11 @@ static void process_stream_close(StreamDesc *s) {
         if (ps->hSnap && ps->hSnap != INVALID_HANDLE_VALUE) {
             CloseHandle(ps->hSnap);
             ps->hSnap = INVALID_HANDLE_VALUE;
+        }
+#else
+        if (ps->pipe) {
+            pclose(ps->pipe);
+            ps->pipe = NULL;
         }
 #endif
     }
@@ -378,26 +401,26 @@ StreamDesc *scanner_open_stream(OttoTokenType scanner, const char *source, uint1
 
     if (scanner == TOK_SCAN_FILE || scanner == TOK_SCAN_FILES) {
         FileGlobStream *fg = (FileGlobStream *)arena_alloc_zero(arena, sizeof(FileGlobStream));
-        fg->adverbs = adverbs;
-        const char *pat = source ? source : "*";
-        // Separate directory and filename pattern
+        const char *pat = (source && source[0]) ? source : "*";
+        char dir_prefix[260] = "";
+        char pattern[260] = "*";
+
         const char *last_slash = strrchr(pat, '/');
         if (!last_slash) last_slash = strrchr(pat, '\\');
 
         if (last_slash) {
-            size_t dlen = last_slash - pat;
-            size_t copy_len = dlen < sizeof(fg->dir_prefix) - 1 ? dlen : sizeof(fg->dir_prefix) - 1;
-            strncpy(fg->dir_prefix, pat, copy_len);
-            fg->dir_prefix[copy_len] = '\0';
-            strncpy(fg->pattern, last_slash + 1, sizeof(fg->pattern) - 1);
+            size_t dlen = (size_t)(last_slash - pat);
+            size_t copy_len = dlen < sizeof(dir_prefix) - 1 ? dlen : sizeof(dir_prefix) - 1;
+            memcpy(dir_prefix, pat, copy_len);
+            dir_prefix[copy_len] = '\0';
+            strncpy(pattern, last_slash + 1, sizeof(pattern) - 1);
+            pattern[sizeof(pattern) - 1] = '\0';
         } else {
-            fg->dir_prefix[0] = '\0';
-            strncpy(fg->pattern, pat, sizeof(fg->pattern) - 1);
+            strncpy(pattern, pat, sizeof(pattern) - 1);
+            pattern[sizeof(pattern) - 1] = '\0';
         }
 
-#ifndef _WIN32
-        fg->dir = opendir(fg->dir_prefix[0] ? fg->dir_prefix : ".");
-#endif
+        glob_walk_dir(dir_prefix, pattern, adverbs, fg, arena, 0);
         sd->handle = fg;
         sd->next = file_glob_next;
         sd->close = file_glob_close;
@@ -444,15 +467,20 @@ Value scanner_extract_all(OttoTokenType scanner, Value input, Arena *arena) {
             size_t start = i;
             if (s.ptr[i] == '-' || s.ptr[i] == '+') i++;
             while (i < s.len && isdigit((unsigned char)s.ptr[i])) i++;
+            bool is_flt = false;
             if (i < s.len && s.ptr[i] == '.' && i + 1 < s.len && isdigit((unsigned char)s.ptr[i+1])) {
+                is_flt = true;
                 i++;
                 while (i < s.len && isdigit((unsigned char)s.ptr[i])) i++;
             }
             Slice num_slice = {s.ptr + start, i - start};
             bool ok;
-            int64_t val = slice_to_i64(num_slice, &ok);
-            if (ok) {
-                val_list_append(&list, val_int(val), arena);
+            if (is_flt) {
+                double fval = slice_to_f64(num_slice, &ok);
+                if (ok) val_list_append(&list, val_float(fval), arena);
+            } else {
+                int64_t val = slice_to_i64(num_slice, &ok);
+                if (ok) val_list_append(&list, val_int(val), arena);
             }
         }
         return list;
@@ -471,16 +499,46 @@ Value scanner_extract_all(OttoTokenType scanner, Value input, Arena *arena) {
         return list;
     }
 
-    return input;
-}
-
-Value scanner_list_processes(Arena *arena) {
-    Value list = val_list_create(arena, 32);
-    StreamDesc *sd = scanner_open_stream(TOK_SCAN_PROCESS, NULL, 0, arena);
-    Value item;
-    while (sd->next(sd, &item, arena)) {
-        val_list_append(&list, item, arena);
+    if (scanner == TOK_SCAN_URLS) {
+        Value list = val_list_create(arena, 8);
+        size_t i = 0;
+        while (i < s.len) {
+            if (i + 7 <= s.len && (memcmp(s.ptr + i, "http://", 7) == 0 ||
+                                   (i + 8 <= s.len && memcmp(s.ptr + i, "https://", 8) == 0))) {
+                size_t start = i;
+                while (i < s.len && !isspace((unsigned char)s.ptr[i]) &&
+                       s.ptr[i] != '"' && s.ptr[i] != '\'' && s.ptr[i] != '>' && s.ptr[i] != ')') {
+                    i++;
+                }
+                val_list_append(&list, val_slice(s.ptr + start, i - start), arena);
+            } else {
+                i++;
+            }
+        }
+        return list;
     }
-    if (sd->close) sd->close(sd);
-    return list;
+
+    if (scanner == TOK_SCAN_EMAILS) {
+        Value list = val_list_create(arena, 8);
+        size_t i = 0;
+        while (i < s.len) {
+            while (i < s.len && isspace((unsigned char)s.ptr[i])) i++;
+            if (i >= s.len) break;
+            size_t start = i;
+            bool has_at = false, has_dot_after_at = false;
+            while (i < s.len && !isspace((unsigned char)s.ptr[i]) &&
+                   s.ptr[i] != ',' && s.ptr[i] != ';' && s.ptr[i] != '<' && s.ptr[i] != '>') {
+                if (s.ptr[i] == '@') has_at = true;
+                else if (has_at && s.ptr[i] == '.') has_dot_after_at = true;
+                i++;
+            }
+            if (has_at && has_dot_after_at && (i - start) >= 5) {
+                val_list_append(&list, val_slice(s.ptr + start, i - start), arena);
+            }
+            if (i == start) i++;
+        }
+        return list;
+    }
+
+    return input;
 }

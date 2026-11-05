@@ -59,7 +59,6 @@ typedef enum {
     TOK_VERB_JOBS,
     TOK_VERB_RESUME,
     TOK_VERB_REPEAT,
-    TOK_VERB_REPLY,
 
     // 3. Scanners
     TOK_SCAN_LINE,
@@ -76,10 +75,6 @@ typedef enum {
     TOK_SCAN_PROCESSES,
     TOK_SCAN_ROW,
     TOK_SCAN_ROWS,
-    TOK_SCAN_REQUEST,
-    TOK_SCAN_REQUESTS,
-    TOK_SCAN_CHANGE,
-    TOK_SCAN_CHANGES,
     TOK_SCAN_JSON,
     TOK_SCAN_CSV,
     TOK_SCAN_YAML,
@@ -121,9 +116,7 @@ typedef enum {
     TOK_PREP_WHERE,
     TOK_PREP_MATCHING,
     TOK_PREP_AT,
-    TOK_PREP_ERRORS,
     TOK_PREP_DISCARD,
-    TOK_PREP_TARGET,
     TOK_PREP_REPLACING,
 
     // 7. Conjunctions & Punctuation
@@ -177,14 +170,8 @@ typedef enum {
     TOK_STAR,     // *
     TOK_SLASH,    // /
     TOK_PERCENT,  // %
-    TOK_ASSIGN,   // =
-    TOK_AMP,      // & (for background job)
-    
-    // Command passthrough token (for unquoted CLI in interactive mode)
-    TOK_RAW_CMD
+    TOK_AMP       // & (for background job)
 } OttoTokenType;
-
-typedef OttoTokenType ShxTokenType; // Backwards-compatible alias
 
 typedef struct {
     OttoTokenType type;
@@ -194,15 +181,9 @@ typedef struct {
     union {
         int64_t i64;
         double f64;
-        struct {
-            int64_t val;
-            char unit[8];
-        } unit;
         int nth_val; // for TOK_ORD_NTH: 1 for 1st, 2 for 2nd, etc.
     } lit;
 } Token;
-
-typedef Token OttoToken;
 
 typedef struct Lexer {
     const char *source;
@@ -211,7 +192,6 @@ typedef struct Lexer {
     int line;
     int col;
     bool interactive;
-    bool passthrough_mode;
     const char *error_msg;
 } Lexer;
 

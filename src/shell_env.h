@@ -4,8 +4,10 @@
 #include "value.h"
 #include "arena.h"
 
+struct VM;
+
 // Directory navigation & ring buffer
-void shell_cd(const char *path, Arena *arena);
+void shell_cd(const char *path);
 void shell_back(void);
 Value shell_get_dirs(Arena *arena);
 Value shell_jump(const char *keyword, Arena *arena);
@@ -25,7 +27,7 @@ int shell_add_job(int pid, const char *cmd, void *handle);
 bool shell_kill_job(int job_or_pid);
 
 // Startup & ~/.ottorc execution
-void shell_load_rc(void);
+void shell_load_rc(struct VM *vm);
 
 // History substitution helpers
 Value shell_repeat_history(Value prev_cmd, const char *with_prefix, const char *replace_old, const char *replace_new, Arena *arena);

@@ -39,7 +39,6 @@ typedef struct VM {
     // Constant pool
     Value *constants;
     size_t const_count;
-    size_t const_capacity;
 
     // Symbol table for globals and functions
     Value global_symbols; // Map of symbol name -> Value or function info
@@ -48,12 +47,20 @@ typedef struct VM {
     Value previous_cmd;
     Value previous_last_arg;
     Value that_val; // Value of previous sentence's result
-    Value dir_stack; // List of directory history
-    Value active_jobs; // List of active background jobs
+
+    // Watch & Hook state
+    uint64_t watch_last_mtime;
+    bool watch_initialized;
+    uint16_t on_failure_ip;
+    bool has_on_failure;
+    uint16_t on_interrupt_ip;
+    bool has_on_interrupt;
 } VM;
 
 void vm_init(VM *vm);
 void vm_destroy(VM *vm);
+void vm_run(VM *vm);
+void vm_record_history(VM *vm, Slice cmd_slice);
 void vm_split_cur_fields(VM *vm, CallFrame *frame, const char *delim);
 Value vm_get_ordinal_field(VM *vm, CallFrame *frame, int index); // index 0 = first, -1 = last
 

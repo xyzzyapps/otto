@@ -15,7 +15,6 @@ typedef enum {
     VAL_SLICE,   // Zero-copy {const char* ptr, size_t len}
     VAL_LIST,    // Dynamic Value array
     VAL_MAP,     // Key-value map
-    VAL_STREAM,  // Lazy iterator descriptor
     VAL_FUNC     // Bytecode offset + arity + slot mask
 } ValueType;
 
@@ -38,7 +37,6 @@ typedef struct Value {
         Slice slice;
         struct ValueList *list;
         struct ValueMap *map;
-        struct StreamDesc *stream;
         struct {
             uint32_t ip_offset;
             uint8_t arity;
@@ -65,26 +63,9 @@ typedef struct ValueMap {
     size_t capacity;
 } ValueMap;
 
-// Stream kinds
-typedef enum {
-    STREAM_FILE_LINES,
-    STREAM_MMAP_LINES,
-    STREAM_WORDS,
-    STREAM_NUMBERS,
-    STREAM_BYTES,
-    STREAM_FILES,
-    STREAM_PROCESSES,
-    STREAM_SQLITE_ROWS,
-    STREAM_HOSTS,
-    STREAM_TCP_LINES,
-    STREAM_HTTP_REQUESTS
-} StreamType;
-
 typedef struct StreamDesc {
-    StreamType type;
     void *handle;
     const char *source;
-    void *extra;
     bool eof;
     // Function pointer to fetch next item
     bool (*next)(struct StreamDesc *s, Value *out, Arena *arena);
@@ -120,13 +101,9 @@ static inline Value val_cstr(const char *s) {
 // Slice helpers
 bool slice_eq(Slice a, Slice b);
 bool slice_eq_str(Slice a, const char *b);
-bool slice_case_eq_str(Slice a, const char *b);
 int64_t slice_to_i64(Slice s, bool *ok);
 double slice_to_f64(Slice s, bool *ok);
 Slice slice_trim(Slice s);
-bool slice_starts_with(Slice s, const char *prefix);
-bool slice_ends_with(Slice s, const char *suffix);
-bool slice_contains(Slice haystack, Slice needle);
 char *slice_to_cstr(Slice s, Arena *arena);
 
 // List operations
@@ -147,6 +124,7 @@ bool val_map_get_str(Value map, const char *key, Value *out_val);
 bool val_is_truthy(Value v);
 bool val_equal(Value a, Value b);
 int val_compare(Value a, Value b, bool numeric);
+int val_compare_ex(Value a, Value b, bool numeric, bool casefold);
 char *val_to_string(Value v, Arena *arena);
 void val_print(Value v, FILE *out);
 void val_println(Value v, FILE *out);
